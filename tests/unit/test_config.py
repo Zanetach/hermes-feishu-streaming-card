@@ -26,6 +26,7 @@ def test_load_config_missing_file_returns_defaults(tmp_path):
     assert config == {
         "server": {"host": "127.0.0.1", "port": 8765},
         "feishu": {"app_id": "", "app_secret": ""},
+        "profiles": {},
         "bots": {"default": "default", "items": {}},
         "bindings": {
             "chats": {},
@@ -225,3 +226,85 @@ def test_load_config_rejects_out_of_range_environment_port(tmp_path, monkeypatch
 
     with pytest.raises(ValueError, match="HERMES_FEISHU_CARD_PORT"):
         load_config(tmp_path / "missing.yaml")
+
+
+# ── profile support ──────────────────────────────────────────────
+
+
+def test_load_config_with_profiles(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+profiles:
+  default:
+    feishu:
+      app_id: cli_a
+      app_secret: s_a
+    bots:
+      default: default
+      items: {}
+    bindings:
+      chats: {}
+      fallback_bot: default
+  work:
+    feishu:
+      app_id: cli_b
+      app_secret: s_b
+""",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+
+    assert "profiles" in config
+    assert config["profiles"]["default"]["feishu"]["app_id"] == "cli_a"
+    # 验证 work profile 自动继承了默认的 bots / bindings
+    assert config["profiles"]["work"]["bots"]["default"] == "default"
+    assert config["profiles"]["work"]["bindings"] == {"chats": {}, "group_rules": {"enabled": False}}
+
+
+def test_load_config_without_profiles_still_works(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "feishu:\n  app_id: cli_top\n  app_secret: s_top\n",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+
+    assert config["feishu"]["app_id"] == "cli_top"
+    assert "profiles" in config  # DEFAULT_CONFIG 带入了空 dict
+    assert not config["profiles"]  # 为空
+
+
+def test_profiles_env_override_skipped_when_profiles_present(tmp_path, monkeypatch):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+profiles:
+  default:
+    feishu:
+      app_id: cli_a
+      app_secret: s_a
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_env")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "s_env")
+
+    config = load_config(path)
+
+    # 环境变量不应覆盖 profile 中的凭据
+    assert config["profiles"]["default"]["feishu"]["app_id"] == "cli_a"
+    assert config["profiles"]["default"]["feishu"]["app_secret"] == "s_a"
+
+
+def test_load_config_rejects_non_mapping_profile_value(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+profiles:
+  bad: 123
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="profile"):
+        load_config(path)

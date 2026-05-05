@@ -11,6 +11,7 @@ import yaml
 DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
     "server": {"host": "127.0.0.1", "port": 8765},
     "feishu": {"app_id": "", "app_secret": ""},
+    "profiles": {},
     "bots": {"default": "default", "items": {}},
     "bindings": {
         "chats": {},
@@ -47,6 +48,16 @@ def load_config(path: str | Path) -> dict[str, dict[str, Any]]:
 
         _merge_sections(config, loaded)
 
+    # 展开 profiles：将默认值 deep-merge 到每个 profile 的子配置中
+    profiles = config.get("profiles")
+    if isinstance(profiles, dict) and profiles:
+        for profile_id, profile_cfg in profiles.items():
+            if not isinstance(profile_cfg, dict):
+                raise ValueError(f"profile {profile_id!r} must be a mapping")
+            profile_cfg.setdefault("feishu", copy.deepcopy(DEFAULT_CONFIG["feishu"]))
+            profile_cfg.setdefault("bots", copy.deepcopy(DEFAULT_CONFIG["bots"]))
+            profile_cfg.setdefault("bindings", copy.deepcopy(DEFAULT_CONFIG["bindings"]))
+
     config["server"]["port"] = _normalize_port(config["server"]["port"], "server.port")
     _apply_env_overrides(config)
     return config
@@ -71,6 +82,11 @@ def _apply_env_overrides(config: dict[str, dict[str, Any]]) -> None:
         raw_port = os.environ["HERMES_FEISHU_CARD_PORT"]
         port = _normalize_port(raw_port, "HERMES_FEISHU_CARD_PORT")
         config.setdefault("server", {})["port"] = port
+
+    # profiles 模式下跳过顶层 feishu 凭据的环境变量覆盖
+    profiles = config.get("profiles")
+    if isinstance(profiles, dict) and profiles:
+        return
 
     if "FEISHU_APP_ID" in os.environ:
         config.setdefault("feishu", {})["app_id"] = os.environ["FEISHU_APP_ID"]
