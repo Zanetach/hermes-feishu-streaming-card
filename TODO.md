@@ -24,13 +24,18 @@
 - [x] 多 Bot 注册与路由、群聊绑定、Bot CLI、路由诊断（V3.2）
 - [x] Accept-Encoding 修复 brotli 兼容（V3.2.1）
 - [x] 真实 Feishu E2E 主链路验收（Hermes hook 到 sidecar `/events` 的 fail-open 转发链路）
-- [x] Feishu CardKit HTTP client 已实现，mock server + 真实 smoke 验证
+- [x] 实现 Feishu CardKit HTTP client，并用 mock server 验证 tenant token、发送和更新。
+- [x] 真实飞书应用做人工 CardKit smoke test，凭据仅使用本机配置或环境变量
+- [x] 使用真实飞书应用做人工 CardKit smoke test，凭据仅使用本机配置或环境变量。
 - [x] 16k 中文字符长卡压力测试
+- [x] 将 sidecar 进程管理从占位 `status` 扩展为可启动、可停止、可探活。
+- [x] 增加 sidecar 健康检查和重试指标。
+- [x] 增加安装前 Hermes 版本展示和更友好的错误提示。
 - [x] Hermes `v2026.4.23` 安装/恢复 smoke 闭环（doctor → install → restore 闭环）
-- [x] 补齐基于 Hermes fixture 和 mock sidecar 的最小 hook 事件转发验证
-- [x] 在真实 Hermes Gateway 进程中做人工 smoke test
-- [x] 编写从 legacy/dual（installer_v2.py、gateway_run_patch.py、patch_feishu.py）安装迁移到 sidecar-only 的安全迁移说明
-- [x] 端到端截图与验证材料（e2e-card-preview.svg、e2e-card-preview.json、generate_e2e_preview.py）
+- [x] 补齐基于 Hermes fixture 和 mock sidecar 的最小 hook 事件转发验证。
+- [x] 在真实 Hermes Gateway 进程中做人工 smoke test。
+- [x] 编写从 legacy/dual（installer_v2.py、gateway_run_patch.py、patch_feishu.py）安装迁移到 sidecar-only 的安全迁移说明。
+- [x] 端到端截图与验证材料（e2e-card-preview.svg、e2e-card-preview.json、generate_e2e_preview.py）。
 
 ## V3.4 (计划)
 

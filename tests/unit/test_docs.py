@@ -129,7 +129,7 @@ def test_docs_describe_sidecar_process_management_scope():
     assert "process_pid/process_token" in docs
     assert "POSIX" in docs
     assert "no-op client" in docs
-    assert "将 sidecar 进程管理" in docs and "可启动、可停止、可探活" in docs
+    assert "- [x] 将 sidecar 进程管理从占位 `status` 扩展为可启动、可停止、可探活。" in docs
 
 
 def test_docs_describe_sidecar_health_and_retry_metrics():
@@ -149,7 +149,7 @@ def test_docs_describe_sidecar_health_and_retry_metrics():
     assert "feishu_update_retries" in docs
     assert "status" in docs
     assert "重复卡片" in docs
-    assert "sidecar 健康检查" in docs
+    assert "- [x] 增加 sidecar 健康检查和重试指标。" in docs
 
 
 def test_docs_describe_feishu_http_client_and_live_smoke():
@@ -166,10 +166,10 @@ def test_docs_describe_feishu_http_client_and_live_smoke():
     assert "mock Feishu server" in docs
     assert "smoke-feishu-card" in docs
     assert "--chat-id" in docs
-    assert "真实飞书" in docs and "smoke" in docs
+    assert "真实飞书应用做人工 CardKit smoke test" in docs
     assert "- [x] 实现 Feishu CardKit HTTP client，并用 mock server 验证 tenant token、发送和更新。" in docs
     assert "- [x] 提供 `smoke-feishu-card` 手动命令用于真实飞书卡片发送/更新验证。" in docs
-    assert "真实飞书" in docs and "smoke test" in docs
+    assert "- [x] 使用真实飞书应用做人工 CardKit smoke test，凭据仅使用本机配置或环境变量。" in docs
     assert "- [x] 完成真实飞书长卡片压力测试，同一张卡片更新到 16k 中文字符。" in docs
 
 
@@ -188,7 +188,7 @@ def test_docs_describe_hermes_detection_diagnostics():
     assert "minimum_supported_version" in docs
     assert "run_py_exists" in docs
     assert "reason" in docs
-    assert "Hermes 版本展示" in docs and "更友好的错误提示" in docs
+    assert "- [x] 增加安装前 Hermes 版本展示和更友好的错误提示。" in docs
 
 
 def test_legacy_handoff_docs_do_not_claim_active_cardkit_completion():
