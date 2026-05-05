@@ -232,6 +232,13 @@ Coverage: real Hermes Gateway E2E, real Feishu app card verification, 16k long-c
 
 MIT License. See [LICENSE](LICENSE).
 
+## Contributors
+
+Thanks to these contributors for improving the project:
+
+- [gischuck](https://github.com/gischuck) — [PR #12](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/12) Accept-Encoding fix (V3.2.1 brotli compatibility)
+- [fengs2021](https://github.com/fengs2021) — [PR #17](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/17) lock optimization and update interval improvement (V3.3.0)
+
 ## Security
 
 Do not commit App Secret, tenant token, or real chat_id. Screenshots demonstrate V3.3.0 card rendering only. Production credentials belong in local config or environment variables.

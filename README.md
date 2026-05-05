@@ -232,6 +232,13 @@ python3 -m pytest -q    # 全量测试：425 passed, 0 failed（GitHub Actions P
 
 MIT License，详见 [LICENSE](LICENSE)。
 
+## 贡献者
+
+感谢以下贡献者对项目的改进：
+
+- [gischuck](https://github.com/gischuck) — [PR #12](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/12) Accept-Encoding 修复（V3.2.1 brotli 兼容）
+- [fengs2021](https://github.com/fengs2021) — [PR #17](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/17) 锁架构优化与更新间隔改进（V3.3.0）
+
 ## 安全说明
 
 不要把 App Secret、tenant token、真实 chat_id 提交到仓库。效果图仅用于展示 V3.3.0 卡片效果，生产凭据保存在本机配置或环境变量中。
