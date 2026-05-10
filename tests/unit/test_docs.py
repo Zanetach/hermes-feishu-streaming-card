@@ -284,6 +284,8 @@ def test_config_example_documents_profile_and_bot_card_titles():
 def test_testing_docs_describe_v340_doctor_output_without_stale_counts():
     zh = read_doc("docs/testing.md")
     en = read_doc("docs/testing.en.md")
+    e2e_zh = read_doc("docs/e2e-verification.md")
+    e2e_en = read_doc("docs/e2e-verification.en.md")
 
     for doc in (zh, en):
         assert "hook_strategy" in doc
@@ -291,6 +293,8 @@ def test_testing_docs_describe_v340_doctor_output_without_stale_counts():
         assert "anchor" in doc or "anchors" in doc
         assert "gateway_run_013_plus" in doc
         assert "legacy_gateway_run" in doc
+
+    for doc in (zh, en, e2e_zh, e2e_en):
         assert "425 passed" not in doc
         assert "398 passed" not in doc
 
