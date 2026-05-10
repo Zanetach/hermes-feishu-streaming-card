@@ -57,6 +57,22 @@ python3 -m hermes_feishu_card.cli status --config config.yaml.example
 
 `status` should show `status: running`, `active_sessions`, and metrics. Without Feishu credentials, advanced starts use a no-op client. With credentials, the sidecar reads them only from local config or environment variables.
 
+## Upgrading To V3.4.0
+
+V3.4.0 selects the hook strategy from the Hermes version and `gateway/run.py` code anchors. Hermes `0.13.0+` uses `gateway_run_013_plus`; older Hermes from `v2026.4.23` through `0.12.x` continues to use `legacy_gateway_run`. After upgrading the plugin, reinstall the hook; restarting the sidecar alone is not enough.
+
+```bash
+python3 -m hermes_feishu_card.cli stop --config ~/.hermes_feishu_card/config.yaml
+pip install -e ".[test]" --upgrade
+python3 -m hermes_feishu_card.cli doctor --config ~/.hermes_feishu_card/config.yaml --hermes-dir ~/.hermes/hermes-agent
+python3 -m hermes_feishu_card.cli install --hermes-dir ~/.hermes/hermes-agent --yes
+python3 -m hermes_feishu_card.cli start --config ~/.hermes_feishu_card/config.yaml
+```
+
+`doctor` output should include `hook_strategy`, `compatibility`, and anchors. If Hermes has been upgraded to `0.13.0+`, confirm `hook_strategy: gateway_run_013_plus` before installing; older Hermes should continue to report `legacy_gateway_run`.
+
+For multiple independent Hermes profile processes, set a stable `HERMES_FEISHU_CARD_PROFILE_ID` for each process. This avoids ambiguous automatic profile detection and keeps profile-to-bot routing explicit. A single sidecar serving multiple profiles should still use the `profiles` section for each profile's credentials, bots, and card title.
+
 ## Upgrading From V3.1 To V3.2.1
 
 V3.2.1 is **backward compatible** with V3.1 on the sidecar-only architecture. Single-bot configurations continue to work without changes; to use the new multi-bot / group chat binding features, the configuration must be extended.

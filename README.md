@@ -1,12 +1,21 @@
-# Hermes 飞书流式卡片插件 V3.3.0
+# Hermes 飞书流式卡片插件 V3.4.0
 
 [中文](README.md) | [English](README.en.md)
 
 ![Hermes Feishu Streaming Card 封面](docs/assets/readme-cover.png)
 
-为 Hermes Agent Gateway 的飞书/Lark 平台提供流式卡片消息。V3.3.0 **sidecar-only** 架构，支持多 Profile 进程内隔离、多 Bot 路由、DeepSeek 思维链兼容和表格超限保护。向后兼容 V3.2 及更早配置。
+为 Hermes Agent Gateway 的飞书/Lark 平台提供流式卡片消息。V3.4.0 **sidecar-only** 架构，支持 Hermes 0.13.0+ 兼容、多 Profile 进程内隔离、多 Bot 路由、DeepSeek 思维链兼容和表格超限保护。向后兼容 V3.2 及更早配置。
 
 ![飞书流式卡片真实效果截图](docs/assets/feishu-weather-card.png)
+
+## V3.4.0 更新重点
+
+- **适配 Hermes 0.13.0+ 和后续新版本**：安装器会根据 Hermes 版本和代码 anchor 选择 `gateway_run_013_plus` hook strategy。
+- **旧版本 Hermes 继续兼容**：`v2026.4.23` 到 `0.12.x` 使用 `legacy_gateway_run` strategy，不需要用户降级插件。
+- **doctor 可见兼容状态**：`doctor` 输出 `hook_strategy`、`compatibility` 和 anchor 检测结果，便于确认当前 Hermes 目录命中了哪个兼容分支。
+- **升级后必须重新安装 hook**：升级插件后运行 `install --hermes-dir ... --yes`，让 Hermes 使用对应版本的 hook。
+- **修复 issue #23**：多 Hermes profile + 多 Feishu bot 场景下，profile id 会被显式识别并路由到对应 bot。
+- **多 profile / multi bot 体验补齐**：支持 per-bot/profile title、cron final cards、attachment summaries + native media delivery，以及 reply card context。
 
 ## 快速安装
 
@@ -17,14 +26,17 @@ export FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx
 python3 -m hermes_feishu_card.cli setup --hermes-dir ~/.hermes/hermes-agent --yes
 ```
 
-`setup` 是整合安装器，自动生成配置、检查 Hermes 版本（要求 `v2026.4.23` 以上）、安装 hook、启动 sidecar 并做健康检查。分步命令见下方 CLI 命令表。
+`setup` 是整合安装器，自动生成配置、检查 Hermes 版本（支持 `v2026.4.23` 到 `0.12.x` 旧版本，以及 Hermes `0.13.0+` 新版 anchor）、安装 hook、启动 sidecar 并做健康检查。分步命令见下方 CLI 命令表。
 
 ## 核心功能
 
 - **多 Profile 进程内支持**（V3.3.0 新增）：一个 sidecar 服务多个 Hermes profile，`profile_id:message_id` 复合键隔离 session，每个 profile 独立凭据和 bot 路由
 - **多 bot 路由与群聊绑定**：`bots.items` 注册多个飞书机器人，`bindings.chats` 按 `chat_id` 路由到指定 bot，支持 fallback/default bot
+- **Profile / Bot 卡片标题**：全局、profile 和 bot 均可设置卡片标题，bot 级标题优先
 - **流式思考展示**：`thinking.delta` 累积渲染，自动过滤 `<think>`/`</think>` 及 DeepSeek `<thinking>`/`</thinking>` 标签
 - **渐进式答案更新**：`answer.delta` 分段进入同一张卡片，完成后覆盖思考内容
+- **Cron 最终卡片与回复上下文**：cron 任务可发送最终卡片，回复卡片保留必要上下文
+- **附件摘要与原生媒体投递**：附件摘要进入卡片，媒体内容按飞书原生消息能力投递
 - **工具调用跟踪**：`tool.updated` 显示累计调用次数和状态
 - **运行统计 footer**：显示耗时、模型、token、上下文占比，非终态卡片 footer 旋转 braille 动画
 - **表格超限保护**（V3.3.0 新增）：超过飞书 5 个表格限制自动截断并提示，避免 11310 错误
@@ -34,7 +46,7 @@ python3 -m hermes_feishu_card.cli setup --hermes-dir ~/.hermes/hermes-agent --ye
 
 ## 升级
 
-从 V3.2.x 升级到 V3.3.0 向后兼容，**单 Profile 配置无需任何修改**。
+从 V3.2.x/V3.3.0 升级到 V3.4.0 向后兼容，**单 Profile 配置无需任何修改**。如果升级的是 Hermes 0.13.0+，必须重新执行 `install --hermes-dir ... --yes`，让安装器写入 `gateway_run_013_plus` hook strategy；旧版本 Hermes 会继续使用 `legacy_gateway_run`。
 
 ```bash
 # 1. 停止 sidecar
@@ -42,12 +54,15 @@ python3 -m hermes_feishu_card.cli stop --config ~/.hermes_feishu_card/config.yam
 
 # 2. 更新代码
 cd /path/to/hermes-feishu-streaming-card
-git checkout v3.3.0 && pip install -e ".[test]" --upgrade
+git checkout v3.4.0 && pip install -e ".[test]" --upgrade
 
-# 3. 重新安装 hook（V3.3.0 修复了平台判断）
+# 3. 诊断 Hermes hook strategy 与 anchors
+python3 -m hermes_feishu_card.cli doctor --config ~/.hermes_feishu_card/config.yaml --hermes-dir ~/.hermes/hermes-agent
+
+# 4. 重新安装 hook（V3.4.0 会按 Hermes 版本选择 hook_strategy）
 python3 -m hermes_feishu_card.cli install --hermes-dir ~/.hermes/hermes-agent --yes
 
-# 4. 启动 sidecar
+# 5. 启动 sidecar
 python3 -m hermes_feishu_card.cli start --config ~/.hermes_feishu_card/config.yaml
 ```
 
@@ -161,7 +176,7 @@ python3 -m hermes_feishu_card.cli smoke-feishu-card --config config.yaml.example
 | 命令 | 说明 |
 |------|------|
 | `setup --hermes-dir ... --yes` | 一键安装（配置、检查、hook、sidecar、健康检查） |
-| `doctor --config ... --hermes-dir ...` | 诊断 Hermes 兼容性，输出 `version_source`、`version`、`minimum_supported_version`、`run_py_exists`、`reason` |
+| `doctor --config ... --hermes-dir ...` | 诊断 Hermes 兼容性，输出 `version_source`、`version`、`minimum_supported_version`、`run_py_exists`、`hook_strategy`、`compatibility`、anchors 和 `reason` |
 | `install --hermes-dir ... --yes` | 安装 hook 到 Hermes |
 | `restore --hermes-dir ... --yes` | 恢复原始 Hermes 文件 |
 | `uninstall --hermes-dir ... --yes` | 卸载并恢复 |
@@ -194,6 +209,7 @@ Hermes hook 将 `message.started` / `thinking.delta` / `answer.delta` / `tool.up
 - **重复卡片**：检查 `/health` metrics（`events_received`、`feishu_send_successes`），V3.3.0 per-message lock 和 `profile_id:message_id` 复合键保证一消息一卡片。
 - **灰色原生文本**：sidecar 成功接收 `message.completed` 后 Hermes hook 抑制原生文本；不可用时 fail-open 降级。V3.3.0 修复了非飞书平台被吞掉的问题。
 - **doctor 不支持**：确认 Hermes ≥ `v2026.4.23`（读取 `VERSION` 或 Git tag `v2026.4.23+`），且目录中存在 `gateway/run.py`。
+- **Hermes 0.13.0+ 升级后仍无卡片**：先运行 `doctor --config ... --hermes-dir ...` 查看 `hook_strategy`、`compatibility` 和 anchors，再重新 `install --hermes-dir ... --yes`。
 - **恢复失败**：`restore`/`uninstall` 检测到文件改动拒绝覆盖，先备份再人工确认差异。
 - **footer token 异常**：过滤明显异常值，若仍异常检查 Hermes 传入的 `tokens`/`context` 元数据。
 - **表格超限**：V3.3.0 自动截断超 5 个表格并附加提示，减少 Markdown 表格数量即可。
@@ -202,6 +218,7 @@ Hermes hook 将 `message.started` / `thinking.delta` / `answer.delta` / `tool.up
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| [v3.4.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.4.0) | 2026-05 | Hermes 0.13.0+ 兼容、旧版本 strategy 保留、issue #23、多 profile/multi bot、附件与回复上下文 |
 | [v3.3.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.3.0) | 2026-05 | 多 Profile、DeepSeek 兼容、表格保护、Footer 动画、平台判断修复 |
 | [v3.2.1](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.2.1) | 2026-04 | Accept-Encoding 修复 |
 | [v3.2.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.2.0) | 2026-04 | 多 Bot 路由、群聊绑定、Bot CLI、路由诊断 |

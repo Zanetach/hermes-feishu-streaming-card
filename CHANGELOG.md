@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.2.0.html).
 
+## V3.4.0 — 2026-05-10
+
+### Added
+- Hermes 0.13+ compatibility strategy: installer and `doctor` select/report the `gateway_run_013_plus` hook strategy from Hermes version and code anchors.
+- Per-bot/profile titles: card titles can be set globally, per profile, or per bot, with bot-level titles taking precedence.
+- Cron final card delivery for scheduled Hermes runs.
+- Attachment summaries with native media delivery, keeping summaries in cards while media uses Feishu-native delivery.
+- Card reply context so reply cards retain the routing/context needed by the sidecar.
+
+### Fixed
+- issue #23: multi Hermes profile + multi Feishu bot deployments now preserve explicit profile identity and route to the intended bot.
+
+### Compatibility
+- Older Hermes strategy preserved: Hermes `v2026.4.23` through `0.12.x` continues to use `legacy_gateway_run`.
+- `doctor` now exposes `hook_strategy`, `compatibility`, and anchor diagnostics to make install decisions auditable before writing hooks.
+
 ## [3.3.0] - 2026-05-01
 
 ### Fixed

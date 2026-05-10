@@ -1,12 +1,21 @@
-# Hermes Feishu Streaming Card Plugin V3.3.0
+# Hermes Feishu Streaming Card Plugin V3.4.0
 
 [中文](README.md) | [English](README.en.md)
 
 ![Hermes Feishu Streaming Card cover](docs/assets/readme-cover.png)
 
-Streaming card messages for the Feishu/Lark platform in Hermes Agent Gateway. V3.3.0 **sidecar-only** architecture with multi-profile in-process isolation, multi-bot routing, DeepSeek chain-of-thought compatibility, and table limit protection.
+Streaming card messages for the Feishu/Lark platform in Hermes Agent Gateway. V3.4.0 **sidecar-only** architecture with Hermes 0.13.0+ compatibility, multi-profile in-process isolation, multi-bot routing, DeepSeek chain-of-thought compatibility, and table limit protection.
 
 ![Real Feishu streaming card screenshot](docs/assets/feishu-weather-card.png)
+
+## V3.4.0 Highlights
+
+- **Hermes 0.13.0+ and later**: the installer selects the `gateway_run_013_plus` hook strategy from the Hermes version and code anchors.
+- **older Hermes remains supported**: Hermes `v2026.4.23` through `0.12.x` continues to use the `legacy_gateway_run` strategy; no plugin downgrade is required.
+- **doctor reports compatibility**: `doctor` prints `hook_strategy`, `compatibility`, and anchor detection results so you can confirm the selected path.
+- **Reinstall the hook after upgrading**: run `install --hermes-dir ... --yes` after upgrading so Hermes uses the matching hook implementation.
+- **issue #23 fixed**: multi Hermes profile + multi Feishu bot deployments explicitly identify profile ids and route to the matching bot.
+- **Multi-profile / multi-bot polish**: per-bot/profile title, cron final cards, attachment summaries + native media delivery, and reply card context.
 
 ## Quick Install
 
@@ -17,14 +26,17 @@ export FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx
 python3 -m hermes_feishu_card.cli setup --hermes-dir ~/.hermes/hermes-agent --yes
 ```
 
-`setup` generates config, validates Hermes (`v2026.4.23+`), installs the hook, starts the sidecar, and checks health — all in one pass. See the CLI table below for step-by-step commands.
+`setup` generates config, validates Hermes (older Hermes from `v2026.4.23` through `0.12.x`, plus Hermes `0.13.0+` anchors), installs the hook, starts the sidecar, and checks health — all in one pass. See the CLI table below for step-by-step commands.
 
 ## Core Features
 
 - **Multi-profile in-process** (new in V3.3.0): one sidecar serves multiple Hermes profiles with `profile_id:message_id` composite keys for session isolation and per-profile credentials/bot routing
 - **Multi-bot routing & group chat**: register bots in `bots.items`, map `bindings.chats` to `chat_id`, fallback/default bot for unmatched sessions
+- **Profile / bot card titles**: global, profile, and bot card titles are supported, with bot-level titles taking precedence
 - **Streaming thinking**: renders `thinking.delta`, filters `<think>`/`</think>` and DeepSeek `<thinking>`/`</thinking>` tags
 - **Progressive answer**: streams `answer.delta` into one card, replaces thinking on completion
+- **Cron final cards and reply context**: cron jobs can deliver final cards, and reply cards preserve the needed context
+- **Attachment summaries and native media delivery**: attachment summaries appear in cards while media is delivered through native Feishu message capabilities
 - **Tool call tracking**: `tool.updated` shows cumulative call count and status
 - **Runtime footer**: duration, model, tokens, context %. Non-terminal cards show a rotating braille spinner
 - **Table limit protection** (new in V3.3.0): auto-truncates tables exceeding Feishu's 5-table limit with a notice appended
@@ -34,7 +46,7 @@ python3 -m hermes_feishu_card.cli setup --hermes-dir ~/.hermes/hermes-agent --ye
 
 ## Upgrading
 
-Upgrading from V3.2.x to V3.3.0 is backward-compatible. **Single-profile configs need no changes.**
+Upgrading from V3.2.x/V3.3.0 to V3.4.0 is backward-compatible. **Single-profile configs need no changes.** For Hermes 0.13.0+, you must run `install --hermes-dir ... --yes` again so the installer writes the `gateway_run_013_plus` hook strategy; older Hermes continues to use `legacy_gateway_run`.
 
 ```bash
 # 1. Stop sidecar
@@ -42,12 +54,15 @@ python3 -m hermes_feishu_card.cli stop --config ~/.hermes_feishu_card/config.yam
 
 # 2. Update code
 cd /path/to/hermes-feishu-streaming-card
-git checkout v3.3.0 && pip install -e ".[test]" --upgrade
+git checkout v3.4.0 && pip install -e ".[test]" --upgrade
 
-# 3. Reinstall hook (V3.3.0 fixes platform check)
+# 3. Diagnose Hermes hook strategy and anchors
+python3 -m hermes_feishu_card.cli doctor --config ~/.hermes_feishu_card/config.yaml --hermes-dir ~/.hermes/hermes-agent
+
+# 4. Reinstall hook (V3.4.0 selects hook_strategy by Hermes version)
 python3 -m hermes_feishu_card.cli install --hermes-dir ~/.hermes/hermes-agent --yes
 
-# 4. Start sidecar
+# 5. Start sidecar
 python3 -m hermes_feishu_card.cli start --config ~/.hermes_feishu_card/config.yaml
 ```
 
@@ -161,7 +176,7 @@ Ensure Hermes `config.yaml` has `streaming.enabled: true` and `streaming.transpo
 | Command | Description |
 |---------|-------------|
 | `setup --hermes-dir ... --yes` | One-shot install (config, check, hook, sidecar, health) |
-| `doctor --config ... --hermes-dir ...` | Diagnostics: `version_source`, `version`, `minimum_supported_version`, `run_py_exists`, `reason` |
+| `doctor --config ... --hermes-dir ...` | Diagnostics: `version_source`, `version`, `minimum_supported_version`, `run_py_exists`, `hook_strategy`, `compatibility`, anchors, `reason` |
 | `install --hermes-dir ... --yes` | Install hook into Hermes |
 | `restore --hermes-dir ... --yes` | Restore original Hermes files |
 | `uninstall --hermes-dir ... --yes` | Uninstall and restore |
@@ -194,6 +209,7 @@ The Hermes hook converts `message.started` / `thinking.delta` / `answer.delta` /
 - **Duplicate cards**: inspect `/health` metrics (`events_received`, `feishu_send_successes`). V3.3.0 per-message lock + `profile_id:message_id` keys ensure one card per message.
 - **Gray native text**: after sidecar accepts `message.completed`, Hermes hook suppresses native text; fail-open on sidecar unavailable. V3.3.0 fixes non-Feishu platforms being swallowed.
 - **`doctor` unsupported**: Hermes ≥ `v2026.4.23` (reads `VERSION` or Git tag `v2026.4.23+`), `gateway/run.py` must exist.
+- **No cards after upgrading Hermes 0.13.0+**: run `doctor --config ... --hermes-dir ...` to inspect `hook_strategy`, `compatibility`, and anchors, then re-run `install --hermes-dir ... --yes`.
 - **Restore fails**: file modified → `restore`/`uninstall` refuse to overwrite. Back up, then manually diff.
 - **Footer tokens wrong**: abnormal values filtered; if still wrong, inspect Hermes `tokens`/`context` metadata.
 - **Table limit exceeded**: V3.3.0 auto-truncates >5 tables with a notice. Reduce Markdown tables.
@@ -202,6 +218,7 @@ The Hermes hook converts `message.started` / `thinking.delta` / `answer.delta` /
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| [v3.4.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.4.0) | 2026-05 | Hermes 0.13.0+ compatibility, older Hermes strategy preserved, issue #23, multi-profile/multi-bot, attachments and reply context |
 | [v3.3.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.3.0) | 2026-05 | Multi-profile, DeepSeek compat, table protection, footer spinner, platform fix |
 | [v3.2.1](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.2.1) | 2026-04 | Accept-Encoding fix |
 | [v3.2.0](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.2.0) | 2026-04 | Multi-bot routing, group chat bindings, Bot CLI, routing diagnostics |

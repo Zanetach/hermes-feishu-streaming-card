@@ -61,7 +61,7 @@ This command sends and updates a real test card. Run it only when local credenti
 python3 -m pytest tests/unit/test_docs.py -q
 ```
 
-Documentation tests are low-brittleness guards: they verify that README keeps sidecar-only and `v2026.4.23` support range statements, that mainline docs clearly say legacy/dual code is not the active runtime, and that the event protocol keeps declaring card states. They do not replace human documentation review.
+Documentation tests are low-brittleness guards: they verify that README keeps sidecar-only, older Hermes `v2026.4.23` support range, and Hermes `0.13.0+` compatibility statements, that mainline docs clearly say legacy/dual code is not the active runtime, and that the event protocol keeps declaring card states. They do not replace human documentation review.
 
 ## E2E Visual Preview
 
@@ -90,7 +90,7 @@ python3 -m hermes_feishu_card.cli doctor --config config.yaml.example --skip-her
 python3 -m hermes_feishu_card.cli doctor --config config.yaml.example --hermes-dir ~/.hermes/hermes-agent
 ```
 
-`doctor` requires an explicit `--config`. `--skip-hermes` is useful for repository dry-runs; real installation should use `--hermes-dir` for read-only Hermes detection. Output includes `version_source`, `version`, `minimum_supported_version`, `run_py_exists`, and `reason`. It does not write Hermes files, backups, or manifests.
+`doctor` requires an explicit `--config`. `--skip-hermes` is useful for repository dry-runs; real installation should use `--hermes-dir` for read-only Hermes detection. Output includes `version_source`, `version`, `minimum_supported_version`, `run_py_exists`, `hook_strategy`, `compatibility`, anchors, and `reason`. It does not write Hermes files, backups, or manifests. Hermes `0.13.0+` should report `gateway_run_013_plus`; older Hermes from `v2026.4.23` through `0.12.x` should report `legacy_gateway_run`.
 
 ## Real Feishu Integration
 

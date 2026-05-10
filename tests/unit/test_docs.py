@@ -33,6 +33,24 @@ def test_readme_documents_sidecar_only_and_supported_hermes_version():
     assert "group_rules" in readme
 
 
+def test_readme_documents_v340_hermes_compatibility():
+    readme = read_doc("README.md")
+
+    assert "V3.4.0" in readme
+    assert "Hermes 0.13.0" in readme
+    assert "旧版本" in readme
+    assert "hook_strategy" in readme
+
+
+def test_english_readme_documents_v340_hermes_compatibility():
+    readme = read_doc("README.en.md")
+
+    assert "V3.4.0" in readme
+    assert "Hermes 0.13.0" in readme
+    assert "older Hermes" in readme
+    assert "hook_strategy" in readme
+
+
 def test_english_readme_and_docs_are_linked():
     readme = read_doc("README.md")
     english_readme = read_doc("README.en.md")
@@ -47,7 +65,7 @@ def test_english_readme_and_docs_are_linked():
     ]
 
     assert "[中文](README.md)" in english_readme
-    assert "Hermes Feishu Streaming Card Plugin V3.3.0" in english_readme
+    assert "Hermes Feishu Streaming Card Plugin V3.4.0" in english_readme
     assert "docs/assets/readme-cover.png" in english_readme
     assert "setup --hermes-dir" in english_readme
     assert "Hermes Gateway Streaming And Thinking" in english_readme
