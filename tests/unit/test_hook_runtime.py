@@ -15,6 +15,8 @@ def clear_hook_env(monkeypatch):
         "HERMES_FEISHU_CARD_ENABLED",
         "HERMES_FEISHU_CARD_EVENT_URL",
         "HERMES_FEISHU_CARD_TIMEOUT_MS",
+        "HERMES_FEISHU_CARD_PROFILE_ID",
+        "HERMES_HOME",
     ):
         monkeypatch.delenv(name, raising=False)
     hook_runtime.reset_runtime_state()
@@ -931,6 +933,18 @@ def test_build_event_profile_id_sanitizes_env(monkeypatch):
 
 def test_build_event_profile_id_ignores_unrelated_profiles_path(monkeypatch):
     monkeypatch.setenv("HERMES_HOME", "/tmp/profiles/not-hermes")
+
+    payload = hook_runtime.build_event(
+        "message.started",
+        {"chat_id": "oc_1", "message_id": "m_1"},
+    )
+
+    assert payload["data"]["profile_id"] == "default"
+    assert payload["data"]["profile_source"] == "fallback_default"
+
+
+def test_build_event_profile_id_ignores_hermes_home_with_extra_segments(monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", "/home/user/.hermes/profiles/sales/extra")
 
     payload = hook_runtime.build_event(
         "message.started",

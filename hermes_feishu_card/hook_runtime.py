@@ -350,6 +350,8 @@ def _profile_from_path(path: str) -> str | None:
     parts = Path(path).expanduser().parts
     for index in range(len(parts) - 2):
         if parts[index] == ".hermes" and parts[index + 1] == "profiles":
+            if index + 3 != len(parts):
+                return None
             candidate = parts[index + 2].strip()
             if candidate:
                 return candidate

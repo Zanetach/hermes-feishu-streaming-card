@@ -687,6 +687,42 @@ async def test_started_routes_card_to_bound_bot_client():
     assert factory.clients["sales"].sent[0][0] == "oc_sales"
 
 
+async def test_invalid_profile_routes_with_default_factory_and_health_key():
+    factory = FakeFeishuClientFactory()
+
+    def bot_router(event):
+        return RouteResult("sales", "bindings.chats")
+
+    app = create_app({"default": factory, "sales": factory}, bot_router=bot_router)
+    server = TestServer(app)
+    test_client = TestClient(server)
+    await test_client.start_server()
+    try:
+        response = await test_client.post(
+            "/events",
+            json=event_payload(
+                "message.started",
+                0,
+                {"profile_id": "bad:profile/path", "profile_source": "env"},
+                chat_id="oc_sales",
+            ),
+        )
+        status = response.status
+        body = await response.json()
+        health = await test_client.get("/health")
+        health_body = await health.json()
+    finally:
+        await test_client.close()
+
+    assert status == 200
+    assert body == {"ok": True, "applied": True}
+    assert factory.clients["default"].sent == []
+    assert len(factory.clients["sales"].sent) == 1
+    assert "bad:profile/path" not in health_body["profile_diagnostics"]
+    assert health_body["profile_diagnostics"]["default"]["events"] == 1
+    assert health_body["routing"]["last_route_error"] == ""
+
+
 async def test_update_reuses_original_bot_without_rerouting():
     factory = FakeFeishuClientFactory()
     route_calls = 0

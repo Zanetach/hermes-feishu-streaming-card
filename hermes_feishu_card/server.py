@@ -343,8 +343,8 @@ def _resolve_route(request: web.Request, event: SidecarEvent) -> RouteResult | N
 
     # Multi-profile: select profile-specific factory
     if isinstance(feishu_client, dict):
-        profile_id = event.data.get("profile_id", "default") if isinstance(event.data, dict) else "default"
-        current_profile_id = str(profile_id)
+        raw_profile_id = event.data.get("profile_id") if isinstance(event.data, dict) else None
+        current_profile_id = _safe_profile_id(raw_profile_id)
         factory = feishu_client.get(current_profile_id) or feishu_client.get("default")
         if factory is None:
             diagnostics["last_route_error"] = f"no factory for profile {current_profile_id}"
