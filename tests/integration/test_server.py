@@ -323,6 +323,59 @@ async def test_completed_without_deltas_updates_started_card(client):
     assert body["metrics"]["feishu_update_attempts"] == 1
 
 
+async def test_card_config_controls_timeline_rendering():
+    feishu_client = FakeFeishuClient()
+    app = create_app(
+        feishu_client,
+        card_config={
+            "timeline_expanded": True,
+            "show_reasoning": True,
+            "max_timeline_items": 1,
+            "max_reasoning_chars": 20,
+            "max_tool_result_chars": 20,
+        },
+    )
+    server = TestServer(app)
+    test_client = TestClient(server)
+    await test_client.start_server()
+    try:
+        await test_client.post("/events", json=event_payload("message.started", 0))
+        await test_client.post(
+            "/events",
+            json=event_payload(
+                "thinking.delta", 1, {"text": "第一段很长很长很长很长很长"}
+            ),
+        )
+        await wait_for_card_update(feishu_client, "正在思考...")
+        await _REAL_ASYNCIO_SLEEP(0.25)
+        await test_client.post(
+            "/events",
+            json=event_payload(
+                "tool.updated",
+                2,
+                {
+                    "tool_id": "read",
+                    "name": "read_file",
+                    "status": "completed",
+                    "detail": "abcdefghijklmnopqrstuvwxyz1234567890",
+                },
+            ),
+        )
+        await wait_for_card_update(feishu_client, "read_file")
+    finally:
+        await test_client.close()
+
+    card = feishu_client.updated[-1][1]
+    timeline = next(
+        item
+        for item in card["body"]["elements"]
+        if item.get("element_id") == "auxiliary_timeline"
+    )
+    assert timeline["expanded"] is True
+    assert "已折叠 1 条早期思考/工具记录" in str(timeline)
+    assert "内容已折叠" in str(timeline)
+
+
 async def test_message_started_sends_card_as_thread_reply(client):
     test_client, feishu_client = client
 

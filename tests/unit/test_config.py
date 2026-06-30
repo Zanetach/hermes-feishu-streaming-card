@@ -35,8 +35,15 @@ def test_load_config_missing_file_returns_defaults(tmp_path):
         "card": {
             "max_wait_ms": 800,
             "max_chars": 240,
+            "flush_interval_ms": 200,
+            "final_drain_timeout_ms": 900,
             "title": "Hermes Agent",
             "interaction_mode": "auto",
+            "show_reasoning": True,
+            "timeline_expanded": False,
+            "max_timeline_items": 12,
+            "max_reasoning_chars": 1200,
+            "max_tool_result_chars": 600,
             "footer_fields": [
                 "duration",
                 "model",
@@ -83,8 +90,15 @@ card:
     assert config["card"] == {
         "max_wait_ms": 800,
         "max_chars": 120,
+        "flush_interval_ms": 200,
+        "final_drain_timeout_ms": 900,
         "title": "Hermes Agent",
         "interaction_mode": "auto",
+        "show_reasoning": True,
+        "timeline_expanded": False,
+        "max_timeline_items": 12,
+        "max_reasoning_chars": 1200,
+        "max_tool_result_chars": 600,
         "footer_fields": [
             "duration",
             "model",
@@ -155,6 +169,43 @@ def test_load_config_accepts_custom_card_title(tmp_path):
     config = load_config(path)
 
     assert config["card"]["title"] == "研发助手"
+
+
+def test_load_config_defaults_include_v38_card_options(tmp_path):
+    config = load_config(tmp_path / "missing.yaml")
+
+    assert config["card"]["flush_interval_ms"] == 200
+    assert config["card"]["final_drain_timeout_ms"] == 900
+    assert config["card"]["show_reasoning"] is True
+    assert config["card"]["timeline_expanded"] is False
+    assert config["card"]["max_timeline_items"] == 12
+    assert config["card"]["max_reasoning_chars"] == 1200
+    assert config["card"]["max_tool_result_chars"] == 600
+
+
+def test_load_config_accepts_v38_card_options(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "card:\n"
+        "  flush_interval_ms: 80\n"
+        "  final_drain_timeout_ms: 1500\n"
+        "  show_reasoning: false\n"
+        "  timeline_expanded: true\n"
+        "  max_timeline_items: 6\n"
+        "  max_reasoning_chars: 800\n"
+        "  max_tool_result_chars: 300\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config["card"]["flush_interval_ms"] == 80
+    assert config["card"]["final_drain_timeout_ms"] == 1500
+    assert config["card"]["show_reasoning"] is False
+    assert config["card"]["timeline_expanded"] is True
+    assert config["card"]["max_timeline_items"] == 6
+    assert config["card"]["max_reasoning_chars"] == 800
+    assert config["card"]["max_tool_result_chars"] == 300
 
 
 def test_load_config_accepts_yaml_string_port_and_normalizes_to_int(tmp_path):

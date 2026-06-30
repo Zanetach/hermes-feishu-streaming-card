@@ -663,6 +663,14 @@ def _safe_profile_id(value: Any) -> str:
     return "default"
 
 
+def _safe_positive_int(value: Any, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
 def _render_session_card(request: web.Request, session: CardSession) -> dict[str, Any]:
     card_config = request.app[SESSION_CARD_CONFIGS_KEY].get(
         _session_key_for_session(request.app, session),
@@ -685,6 +693,17 @@ def _render_session_card(request: web.Request, session: CardSession) -> dict[str
         footer_fields=footer_fields,
         title=title,
         interaction_mode=interaction_mode,
+        show_reasoning=bool(card_config.get("show_reasoning", True)),
+        timeline_expanded=bool(card_config.get("timeline_expanded", False)),
+        max_timeline_items=_safe_positive_int(
+            card_config.get("max_timeline_items"), 12
+        ),
+        max_reasoning_chars=_safe_positive_int(
+            card_config.get("max_reasoning_chars"), 1200
+        ),
+        max_tool_result_chars=_safe_positive_int(
+            card_config.get("max_tool_result_chars"), 600
+        ),
     )
 
 
