@@ -37,6 +37,12 @@ From V3.8.3, independent slash-command prompts such as `/new`, `/reset`,
 remains Hermes' background upgrade command and does not use an interactive
 command card.
 
+From V3.8.4, those standalone command cards also work in Feishu/Lark WebSocket
+long-connection deployments by patching the Feishu adapter's native interactive
+card action path; local/private sidecars no longer have to fall back to gray
+native text for `/new` or `/model`, and no public HTTP callback is required for
+these native slash/model command cards.
+
 ## macOS / Linux
 
 ```bash
@@ -53,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 | Variable | Default | Description |
 |---|---|---|
-| `HFC_VERSION` | `latest` | Git tag or branch to install, such as `v3.8.3`, `v3.6.6`, or `main`. |
+| `HFC_VERSION` | `latest` | Git tag or branch to install, such as `v3.8.4`, `v3.6.6`, or `main`. |
 | `HFC_REPO` | `baileyh8/hermes-feishu-streaming-card` | GitHub repository to install from. |
 | `HERMES_DIR` | `~/.hermes/hermes-agent` | Hermes Agent root directory. |
 | `HFC_CONFIG` | `~/.hermes/config.yaml` | Sidecar config path. |
@@ -73,7 +79,7 @@ script selects Hermes venv Python and does not fall back to system Python unless
 ```
 export FEISHU_APP_ID=cli_xxx
 export FEISHU_APP_SECRET=xxx
-export HFC_VERSION=v3.8.3
+export HFC_VERSION=v3.8.4
 bash install-docker.sh
 ```
 

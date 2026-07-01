@@ -30,7 +30,7 @@ Normal card states are intentionally simple:
 - `等待选择` (waiting for choice)
 - `已完成` (completed)
 
-During `思考中`, the card shows accumulated `thinking.delta` content and real-time tool call counts. When `interaction.requested` arrives, the card enters `等待选择`. In public callback mode, button clicks hit the sidecar `/card/actions` route, update the original card, and store the selected result; localhost/private sidecar text fallback shows numbered choices and lets Hermes' native text interaction path take over. After `message.completed`, the card enters `已完成`, the final answer replaces thinking content, and users no longer need to see the full thinking trace in the completed state.
+During `思考中`, the card shows accumulated `thinking.delta` content and real-time tool call counts. When `interaction.requested` arrives, the card enters `等待选择`. Sidecar-owned choices can use `/card/actions` to update the original card and store the selected result; localhost/private sidecar text fallback shows numbered choices and lets Hermes' native text interaction path take over. Since V3.8.4, independent commands such as `/new`, `/reset`, and `/model` prefer the Feishu/Lark WebSocket native card-action path. After `message.completed`, the card enters `已完成`, the final answer replaces thinking content, and users no longer need to see the full thinking trace in the completed state.
 
 ## Content Safety
 

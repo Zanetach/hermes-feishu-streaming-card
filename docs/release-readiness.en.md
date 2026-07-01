@@ -2,7 +2,7 @@
 
 [中文](release-readiness.md) | [English](release-readiness.en.md)
 
-Current package version: `3.8.3`. This release keeps the sidecar-only mainline, builds on the V3.8.0 card UX upgrade, V3.8.1 high-frequency delta coalescing, and V3.8.2 timeline readability work, then adds standalone Feishu command cards for independent slash commands such as `/new`, `/reset`, and `/model` while keeping `/update` as a non-interactive background upgrade command.
+Current package version: `3.8.4`. This release keeps the sidecar-only mainline, builds on V3.8.0 card UX, V3.8.1 high-frequency delta coalescing, V3.8.2 timeline readability, and V3.8.3 standalone command cards, then fixes the Feishu/Lark WebSocket long-connection path where `/new`, `/reset`, and `/model` could still fall back to gray native text. `/update` remains a non-interactive background upgrade command.
 
 ## Ready
 
@@ -27,6 +27,8 @@ Current package version: `3.8.3`. This release keeps the sidecar-only mainline, 
 - Pre-tool answers stay in the primary body first, then archive into the auxiliary timeline when the next answer or terminal event arrives; terminal cards strip already archived intermediate prefaces.
 - Auxiliary timeline reasoning and tool details use separate text sizes and visual weight, while raw `thinking.delta` stays out of the user-visible timeline.
 - Independent slash-command confirmations support Feishu command cards: `/new`, `/reset`, `/undo`, and high-cost `/model <model>` prompts render as standalone command cards when available.
+- Feishu/Lark WebSocket long-connection deployments dynamically gain native `send_slash_confirm(...)` and `send_model_picker(...)` card support; button clicks route through `_on_card_action_trigger` back into Hermes' original handlers.
+- When WebSocket-native cards are available, the sidecar `interaction.requested` pre-card is skipped so the same slash command does not show both a sidecar choice card and a native button card.
 - No-argument `/model` selection can use a Feishu-only `send_model_picker(...)` card, call Hermes's callback, and update the same command card with the result.
 - `/update` remains Hermes' background upgrade command and does not render an interactive command card; Hermes native text fallback remains available when the sidecar or final command-card update fails.
 - Terminal events ACK Hermes quickly while slow Feishu PATCH calls complete in the background, preventing duplicate native replies after interrupts or update backlogs.

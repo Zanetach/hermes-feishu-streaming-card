@@ -2,8 +2,10 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 import math
+import sys
 import threading
 import time
+import types
 from types import SimpleNamespace
 from urllib import error
 
@@ -526,6 +528,231 @@ def test_request_slash_confirm_async_posts_event_and_polls_until_completed(monke
     assert payload["data"]["options"][2]["style"] == "danger"
 
 
+def test_request_slash_confirm_async_skips_sidecar_when_native_feishu_card_available(monkeypatch):
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._client = object()
+
+        async def _feishu_send_with_retry(self, **kwargs):
+            raise AssertionError("native send happens later in Hermes")
+
+    posted = []
+    monkeypatch.setenv("HERMES_FEISHU_CARD_EVENT_URL", "http://sidecar.test/events")
+
+    async def fake_post(url, payload, timeout):
+        posted.append((url, payload, timeout))
+        return {"ok": False}
+
+    monkeypatch.setattr(hook_runtime, "_post_json_ordered_response", fake_post)
+
+    async def run():
+        return await hook_runtime.request_slash_confirm_from_hermes_locals_async(
+            {
+                "self": SimpleNamespace(adapters={"feishu": DummyFeishuAdapter()}),
+                "source": SimpleNamespace(platform="feishu", chat_id="oc_abc"),
+                "chat_id": "oc_abc",
+                "conversation_id": "feishu:oc_abc",
+                "message_id": "om_cmd",
+            },
+            command="/new",
+            title="Confirm /new",
+            message="This starts a fresh session.",
+            interaction_id="slash_native",
+        )
+
+    assert asyncio.run(run()) is None
+    assert posted == []
+
+
+def test_install_feishu_command_card_methods_adds_native_slash_confirm():
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._client = object()
+            self.sent = None
+
+        async def _feishu_send_with_retry(self, **kwargs):
+            self.sent = kwargs
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id="om_slash_card"),
+            )
+
+    adapter = DummyFeishuAdapter()
+    runner = SimpleNamespace(adapters={"feishu": adapter})
+
+    installed = hook_runtime.install_feishu_command_card_adapter_methods(runner)
+
+    async def run():
+        return await adapter.send_slash_confirm(
+            chat_id="oc_abc",
+            title="/new",
+            message=(
+                "⚠️ **Confirm /new**\n\n"
+                "This starts a fresh session and discards history.\n\n"
+                "Choose:\n"
+                "• **Approve Once** — proceed this time only"
+            ),
+            session_key="feishu:oc_abc",
+            confirm_id="cf-1",
+            metadata={"reply_to_message_id": "om_user_cmd"},
+        )
+
+    result = asyncio.run(run())
+
+    assert installed is True
+    assert result.success is True
+    assert result.message_id == "om_slash_card"
+    assert adapter.sent["chat_id"] == "oc_abc"
+    assert adapter.sent["msg_type"] == "interactive"
+    assert adapter.sent["reply_to"] == "om_user_cmd"
+
+    card = json.loads(adapter.sent["payload"])
+    assert card["header"]["template"] == "orange"
+    assert card["header"]["title"]["content"] == "/new"
+    assert "This starts a fresh session" in card["elements"][0]["content"]
+    actions = card["elements"][1]["actions"]
+    assert [action["value"]["hfc_choice"] for action in actions] == [
+        "once",
+        "always",
+        "cancel",
+    ]
+    assert actions[0]["value"]["hfc_action"] == "slash_confirm"
+    assert adapter._hfc_slash_confirm_state["cf-1"] == {
+        "session_key": "feishu:oc_abc",
+        "chat_id": "oc_abc",
+        "message_id": "om_slash_card",
+    }
+
+
+def test_install_feishu_command_card_methods_repairs_stale_install_marker():
+    class DummyFeishuAdapter:
+        name = "feishu"
+        _hfc_command_card_methods_installed = True
+
+        def __init__(self):
+            self._client = object()
+            self.sent = None
+
+        async def _feishu_send_with_retry(self, **kwargs):
+            self.sent = kwargs
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id="om_slash_card"),
+            )
+
+    adapter = DummyFeishuAdapter()
+    runner = SimpleNamespace(adapters={"feishu": adapter})
+
+    installed = hook_runtime.install_feishu_command_card_adapter_methods(runner)
+
+    assert installed is True
+    assert callable(getattr(adapter, "send_slash_confirm", None))
+
+    async def run():
+        return await adapter.send_slash_confirm(
+            chat_id="oc_abc",
+            title="Confirm /new",
+            message="This starts a fresh session.",
+            session_key="feishu:oc_abc",
+            confirm_id="cf-1",
+            metadata=None,
+        )
+
+    result = asyncio.run(run())
+
+    assert result.success is True
+    assert adapter.sent["msg_type"] == "interactive"
+
+
+def test_feishu_command_card_action_resolves_native_slash_confirm(monkeypatch):
+    class FakeCallBackCard:
+        def __init__(self):
+            self.type = None
+            self.data = None
+
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._client = object()
+            self._loop = object()
+            self._allowed_group_users = {"ou_user"}
+
+        def _loop_accepts_callbacks(self, loop):
+            return loop is self._loop
+
+        def _allow_group_message(self, sender_id, chat_id, is_bot=False):
+            return sender_id.open_id == "ou_user" and chat_id == "oc_abc"
+
+        def _get_cached_sender_name(self, open_id):
+            return "Bailey" if open_id == "ou_user" else ""
+
+        def _on_card_action_trigger(self, data):
+            return "original"
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    monkeypatch.setattr(hook_runtime, "CallBackCard", FakeCallBackCard, raising=False)
+
+    resolved = []
+    slash_confirm_module = types.ModuleType("tools.slash_confirm")
+
+    def fake_resolve_sync_compat(loop, session_key, confirm_id, choice):
+        resolved.append((loop, session_key, confirm_id, choice))
+        return "New session started."
+
+    slash_confirm_module.resolve_sync_compat = fake_resolve_sync_compat
+    tools_module = types.ModuleType("tools")
+    tools_module.slash_confirm = slash_confirm_module
+    monkeypatch.setitem(sys.modules, "tools", tools_module)
+    monkeypatch.setitem(sys.modules, "tools.slash_confirm", slash_confirm_module)
+
+    adapter = DummyFeishuAdapter()
+    adapter._hfc_slash_confirm_state = {
+        "cf-1": {
+            "session_key": "feishu:oc_abc",
+            "chat_id": "oc_abc",
+            "message_id": "om_slash_card",
+        }
+    }
+    runner = SimpleNamespace(adapters={"feishu": adapter})
+    assert hook_runtime.install_feishu_command_card_adapter_methods(runner) is True
+
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "slash_confirm",
+                    "hfc_confirm_id": "cf-1",
+                    "hfc_choice": "once",
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_abc"),
+            operator=SimpleNamespace(open_id="ou_user", user_id="u_1"),
+        )
+    )
+
+    response = adapter._on_card_action_trigger(data)
+
+    assert resolved == [(adapter._loop, "feishu:oc_abc", "cf-1", "once")]
+    assert "cf-1" not in adapter._hfc_slash_confirm_state
+    assert response.card.type == "raw"
+    card = response.card.data
+    assert card["header"]["template"] == "green"
+    assert "允许一次" in card["header"]["title"]["content"]
+    assert "New session started." in card["elements"][0]["content"]
+
+
 def test_install_feishu_command_card_methods_adds_model_picker(monkeypatch):
     class DummyFeishuAdapter:
         name = "feishu"
@@ -602,6 +829,143 @@ def test_install_feishu_command_card_methods_adds_model_picker(monkeypatch):
     completed = posted[1][1]
     assert completed["message_id"] == "om_model_command"
     assert completed["data"]["answer"] == "Switched to openrouter/deepseek/deepseek-v4-pro"
+
+
+def test_native_feishu_model_picker_uses_websocket_card_when_connected():
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._client = object()
+            self.sent = None
+
+        async def _feishu_send_with_retry(self, **kwargs):
+            self.sent = kwargs
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id="om_model_card"),
+            )
+
+    adapter = DummyFeishuAdapter()
+    runner = SimpleNamespace(adapters={"feishu": adapter})
+    assert hook_runtime.install_feishu_command_card_adapter_methods(runner) is True
+
+    async def run():
+        return await adapter.send_model_picker(
+            chat_id="oc_abc",
+            providers=[
+                {
+                    "name": "OpenRouter",
+                    "slug": "openrouter",
+                    "models": ["deepseek/deepseek-v4-pro"],
+                }
+            ],
+            current_model="deepseek/deepseek-v4-flash",
+            current_provider="openrouter",
+            session_key="feishu:oc_abc",
+            metadata={"reply_to_message_id": "om_model_command"},
+        )
+
+    result = asyncio.run(run())
+
+    assert result.success is True
+    assert result.message_id == "om_model_card"
+    assert adapter.sent["msg_type"] == "interactive"
+    assert adapter.sent["reply_to"] == "om_model_command"
+    card = json.loads(adapter.sent["payload"])
+    assert card["header"]["title"]["content"] == "选择模型"
+    action = card["elements"][1]["actions"][0]
+    assert action["value"]["hfc_action"] == "model_picker"
+    assert json.loads(action["value"]["hfc_choice"]) == {
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4-pro",
+    }
+    picker_id = action["value"]["hfc_model_picker_id"]
+    assert adapter._hfc_model_picker_state[picker_id]["session_key"] == "feishu:oc_abc"
+
+
+def test_feishu_command_card_action_resolves_native_model_picker(monkeypatch):
+    class FakeCallBackCard:
+        def __init__(self):
+            self.type = None
+            self.data = None
+
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._client = object()
+            self._loop = object()
+
+        def _loop_accepts_callbacks(self, loop):
+            return loop is self._loop
+
+        def _allow_group_message(self, sender_id, chat_id, is_bot=False):
+            return sender_id.open_id == "ou_user" and chat_id == "oc_abc"
+
+        def _on_card_action_trigger(self, data):
+            return "original"
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    monkeypatch.setattr(hook_runtime, "CallBackCard", FakeCallBackCard, raising=False)
+
+    selected = []
+
+    async def on_model_selected(chat_id, model_id, provider_slug):
+        selected.append((chat_id, model_id, provider_slug))
+        return f"Switched to {provider_slug}/{model_id}"
+
+    def fake_run_coroutine_threadsafe(coro, loop):
+        assert loop is adapter._loop
+        result = asyncio.run(coro)
+        return SimpleNamespace(result=lambda timeout=None: result)
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", fake_run_coroutine_threadsafe)
+
+    adapter = DummyFeishuAdapter()
+    adapter._hfc_model_picker_state = {
+        "model-1": {
+            "session_key": "feishu:oc_abc",
+            "chat_id": "oc_abc",
+            "message_id": "om_model_card",
+            "on_model_selected": on_model_selected,
+        }
+    }
+    runner = SimpleNamespace(adapters={"feishu": adapter})
+    assert hook_runtime.install_feishu_command_card_adapter_methods(runner) is True
+
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "model_picker",
+                    "hfc_model_picker_id": "model-1",
+                    "hfc_choice": json.dumps(
+                        {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro"}
+                    ),
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_abc"),
+            operator=SimpleNamespace(open_id="ou_user", user_id="u_1"),
+        )
+    )
+
+    response = adapter._on_card_action_trigger(data)
+
+    assert selected == [("oc_abc", "deepseek/deepseek-v4-pro", "openrouter")]
+    assert "model-1" not in adapter._hfc_model_picker_state
+    assert response.card.type == "raw"
+    card = response.card.data
+    assert card["header"]["template"] == "green"
+    assert card["header"]["title"]["content"] == "模型已更新"
+    assert "Switched to openrouter/deepseek/deepseek-v4-pro" in card["elements"][0]["content"]
 
 
 def test_complete_command_card_async_posts_completed_event(monkeypatch):

@@ -2,7 +2,7 @@
 
 当前 active runtime 是 `hermes_feishu_card/`。legacy adapter、dual mode、旧 `sidecar/`、旧 `patch/` 和 `installer_v2.py` 不是 active runtime，仅保留作历史参考。
 
-## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3
+## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3 / V3.8.4
 
 详细路线见 [docs/superpowers/specs/2026-06-30-v3-8-design.md](docs/superpowers/specs/2026-06-30-v3-8-design.md) 和 [docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md](docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md)。
 
@@ -30,14 +30,24 @@
 - [x] 折叠区中思考和工具使用不同字号与灰度层级，工具详情更紧凑。
 - [x] README 增加 V3.8.2 折叠态和展开态真实截图。
 
-### V3.8.3：独立命令卡片（进行中）
+### V3.8.3：独立命令卡片（已完成）
 
 - [x] 明确职责边界：Agent 原卡片只承接授权、clarify / 对话选项等当前任务内交互；slash command 使用独立命令卡片。
 - [x] `/new`、`/reset`、`/undo` 以及 `/model <model>` 高成本模型确认走独立三按钮卡片，点击后执行 Hermes 原 handler，并把结果更新回同一张命令卡片。
 - [x] `/model` 无参数选择器走独立模型选择卡片；用户选择后调用 Hermes 原 `on_model_selected` callback，并在同一卡片展示切换结果。
 - [x] sidecar 不可用、卡片未发送或配置为文本模式时保留 Hermes 原生 text fallback。
 - [x] `/update` 不做交互卡片；后续单独评估后台升级完成/失败通知是否可靠送达飞书。
-- [x] 真实 Hermes + Feishu 本地 smoke：当前本机为私有 text fallback 模式，已确认 `/new`、`/model` 不额外生成 sidecar 命令卡、不双发；独立命令卡点击闭环由 mock sidecar / pytest 覆盖，公网 callback 模式可后续单独做实机按钮验收。
+- [x] 真实 Hermes + Feishu 本地 smoke：重启 Gateway 后 `/new` 已出现 Feishu/Lark WebSocket 原生按钮卡；原生卡片可用时跳过 sidecar 预交互，避免重复选择卡。
+
+### V3.8.4：Feishu WebSocket 命令卡片热修（已完成）
+
+- [x] 修正 V3.8.3 在 Feishu/Lark WebSocket 长连接部署下 `/new`、`/reset`、`/undo` 仍退回灰色文本的问题。
+- [x] 动态补上 Feishu adapter `send_slash_confirm(...)`，按钮点击经 `_on_card_action_trigger` 调用 Hermes `tools.slash_confirm.resolve(...)`。
+- [x] `/model` 无参数选择器改走 Feishu 原生 interactive card，点击后执行 Hermes 原 `on_model_selected` callback 并回写同一卡片。
+- [x] WebSocket 原生卡片可用时跳过 sidecar `interaction.requested` 预卡片，避免 `/new` 同时出现两张选择卡。
+- [x] 修复旧安装标记残留导致 `send_slash_confirm(...)` 未真实挂载的问题，并为原生卡片发送失败补本地 warning。
+- [x] 保留 Hermes 原生文本 fallback：Feishu 原生卡片不可用、sidecar 不可用或回调失败时不阻断命令。
+- [x] 补齐 slash/model WebSocket 卡片发送与 action 解析回归测试。
 
 ### V3.8.x 后续维护与扩展面（待办）
 

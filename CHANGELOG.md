@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.2.0.html).
 
+## V3.8.4 — 2026-07-01
+
+See also: [docs/release-notes-v3.8.4.md](docs/release-notes-v3.8.4.md)
+
+### Fixed
+- Fixed the Feishu/Lark WebSocket long-connection path for standalone slash command cards. Local/private sidecar deployments no longer have to fall back to gray Hermes native text for `/new`, `/reset`, `/undo`, and similar slash confirmations.
+- Added a native Feishu adapter `send_slash_confirm(...)` monkeypatch that renders interactive cards and resolves clicks through Hermes `tools.slash_confirm.resolve(...)`.
+- Added a native Feishu adapter `/model` picker path for WebSocket deployments. Model choices render as Feishu interactive card buttons and call Hermes' original `on_model_selected` callback.
+- Skipped the sidecar `interaction.requested` pre-card whenever Feishu WebSocket-native command cards are available, preventing `/new` from showing both a sidecar choice card and a native button card.
+- Repaired stale in-process install markers so an upgraded Gateway class cannot silently keep missing `send_slash_confirm(...)` and fall back to text.
+
+### Changed
+- Command-card action handling now wraps Feishu `_on_card_action_trigger` and only consumes plugin-owned `hfc_action` values; existing Hermes approval/update card actions continue to use the original adapter path.
+- Release and installer documentation now explicitly describe Feishu/Lark WebSocket long-connection behavior instead of implying that slash command cards require a public HTTP callback.
+- Failed native slash-card sends now emit a local warning instead of silently degrading, making real-environment diagnosis clearer.
+
+### Tests
+- Added regression coverage for native Feishu slash confirmation card sending, sidecar-skip behavior, stale install-marker repair, slash card action resolution, native model picker card sending, and model picker action resolution.
+
 ## V3.8.3 — 2026-07-01
 
 See also: [docs/release-notes-v3.8.3.md](docs/release-notes-v3.8.3.md)
