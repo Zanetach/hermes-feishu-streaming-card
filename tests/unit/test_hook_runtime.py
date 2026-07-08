@@ -3748,3 +3748,128 @@ def test_build_event_profile_id_ignores_hermes_home_with_extra_segments(monkeypa
 
     assert payload["data"]["profile_id"] == "default"
     assert payload["data"]["profile_source"] == "fallback_default"
+
+
+def test_interaction_select_forwards_to_sidecar_and_returns_card(monkeypatch):
+    """A WS-native interaction.select click is forwarded to the sidecar
+    /card/actions endpoint and the returned card is surfaced in place."""
+
+    class FakeCallBackCard:
+        def __init__(self):
+            self.type = None
+            self.data = None
+
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def __init__(self):
+            self._loop = object()
+
+        def _on_card_action_trigger(self, data):
+            return "original"
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    monkeypatch.setattr(hook_runtime, "CallBackCard", FakeCallBackCard, raising=False)
+
+    posted = {}
+
+    def fake_post(url, payload, timeout):
+        posted["url"] = url
+        posted["payload"] = payload
+        posted["timeout"] = timeout
+        return {"ok": True, "card": {"header": {"template": "green"}, "elements": []}}
+
+    monkeypatch.setattr(hook_runtime, "_post_json_sync_response", fake_post)
+    monkeypatch.setattr(
+        hook_runtime,
+        "load_runtime_config",
+        lambda: SimpleNamespace(event_url="http://127.0.0.1:8765/events"),
+    )
+
+    adapter = DummyFeishuAdapter()
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "interaction.select",
+                    "interaction_id": "int-1",
+                    "choice": "opt_b",
+                    "choice_label": "Option B",
+                    "token": "tok-1",
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_abc"),
+            operator=SimpleNamespace(open_id="ou_user", user_name="Bailey"),
+        )
+    )
+
+    response = hook_runtime._hfc_on_feishu_card_action_trigger(adapter, data)
+
+    assert posted["url"] == "http://127.0.0.1:8765/card/actions"
+    assert posted["timeout"] == 5.0
+    sent = posted["payload"]["event"]
+    assert sent["action"]["value"] == {
+        "hfc_action": "interaction.select",
+        "interaction_id": "int-1",
+        "choice": "opt_b",
+        "choice_label": "Option B",
+        "token": "tok-1",
+    }
+    assert sent["context"]["open_chat_id"] == "oc_abc"
+    assert sent["operator"] == {"name": "Bailey", "open_id": "ou_user"}
+    assert response.card.type == "raw"
+    assert response.card.data["header"]["template"] == "green"
+
+
+def test_interaction_select_ignores_incomplete_action(monkeypatch):
+    """Missing interaction_id/token/choice must not POST to the sidecar."""
+
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def _on_card_action_trigger(self, data):
+            return "original"
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+
+    called = {"posted": False}
+
+    def fake_post(url, payload, timeout):
+        called["posted"] = True
+        return {"ok": True, "card": {}}
+
+    monkeypatch.setattr(hook_runtime, "_post_json_sync_response", fake_post)
+
+    adapter = DummyFeishuAdapter()
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "interaction.select",
+                    "interaction_id": "int-1",
+                    # missing token + choice
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_abc"),
+            operator=SimpleNamespace(open_id="ou_user"),
+        )
+    )
+
+    response = hook_runtime._hfc_on_feishu_card_action_trigger(adapter, data)
+
+    assert called["posted"] is False
+    assert response.card is None

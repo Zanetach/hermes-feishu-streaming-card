@@ -1064,6 +1064,12 @@ def _interaction_mode_for_session_key(app: web.Application, session_key: str) ->
     mode = str(raw_mode or "").strip().lower()
     if mode in {"text", "markdown", "reply"}:
         return "text"
+    # "auto" and "callback" both resolve to callback buttons. On a Feishu/Lark
+    # WebSocket long-connection deployment, clarify/interaction card clicks are
+    # delivered to the adapter's card action channel and forwarded to the
+    # sidecar /card/actions endpoint by the hook
+    # (_hfc_handle_interaction_select_action), so callback buttons resolve
+    # without a public HTTP callback URL.
     return "callback"
 
 

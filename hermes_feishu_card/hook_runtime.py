@@ -2140,11 +2140,95 @@ def _hfc_on_feishu_card_action_trigger(self: Any, data: Any) -> Any:
         return _hfc_handle_native_slash_action(self, data, action_value)
     if action == "model_picker":
         return _hfc_handle_native_model_action(self, data, action_value)
+    if action == "interaction.select":
+        return _hfc_handle_interaction_select_action(self, data, action_value)
 
     original = getattr(type(self), "_hfc_original_on_card_action_trigger", None)
     if callable(original):
         return original(self, data)
     return _hfc_empty_feishu_callback_response(self)
+
+
+def _hfc_handle_interaction_select_action(
+    adapter: Any,
+    data: Any,
+    action_value: dict[str, Any],
+) -> Any:
+    """Forward an agent clarify/approval interaction card click to the sidecar.
+
+    Agent-initiated interaction option cards (``interaction.requested``) render
+    Feishu ``callback`` buttons whose value carries
+    ``hfc_action=interaction.select`` plus ``interaction_id`` / ``choice`` /
+    ``choice_label`` / ``token``. Under a Feishu/Lark WebSocket long-connection
+    deployment the click is delivered here (the adapter's card action channel),
+    NOT to the sidecar's ``/card/actions`` HTTP endpoint — the sidecar is on
+    localhost and Feishu cannot POST to it. Prior to this, such clicks fell
+    through to the original adapter handler and were dropped, so the card looked
+    unresponsive (and ``card.interaction_mode: auto`` had to fall back to text).
+
+    This mirrors the existing ``slash_confirm`` / ``model_picker`` WS-native
+    paths: rebuild the native Feishu card-action payload, POST it to the
+    sidecar's ``/card/actions`` endpoint (which marks the interaction completed
+    so the Hermes hook polling ``/interactions/{id}`` unblocks), and return the
+    sidecar's updated card so Feishu updates the card in place.
+    """
+    _hfc_info("inline card action received: interaction.select")
+    interaction_id = str(action_value.get("interaction_id") or "").strip()
+    token = str(action_value.get("token") or "").strip()
+    choice = str(action_value.get("choice") or action_value.get("hfc_choice") or "").strip()
+    choice_label = str(action_value.get("choice_label") or choice).strip()
+    if not interaction_id or not token or not choice:
+        _hfc_info("interaction.select ignored: missing interaction_id/token/choice")
+        return _hfc_empty_feishu_callback_response(adapter)
+
+    chat_id = _hfc_action_chat_id(data)
+    open_id = _hfc_action_open_id(data)
+    operator_name = ""
+    event_obj = getattr(data, "event", None)
+    operator_obj = getattr(event_obj, "operator", None)
+    if operator_obj is not None:
+        operator_name = str(
+            getattr(operator_obj, "user_name", "")
+            or getattr(operator_obj, "name", "")
+            or ""
+        ).strip()
+
+    operator_payload: dict[str, Any] = {}
+    if operator_name:
+        operator_payload["name"] = operator_name
+    if open_id:
+        operator_payload["open_id"] = open_id
+
+    sidecar_payload = {
+        "event": {
+            "action": {
+                "value": {
+                    "hfc_action": "interaction.select",
+                    "interaction_id": interaction_id,
+                    "choice": choice,
+                    "choice_label": choice_label,
+                    "token": token,
+                }
+            },
+            "context": {"open_chat_id": chat_id},
+            "operator": operator_payload,
+        }
+    }
+
+    try:
+        config = load_runtime_config()
+        base_url = _summary_base_url(config.event_url)
+        url = f"{base_url}/card/actions"
+        result = _post_json_sync_response(url, sidecar_payload, 5.0)
+    except Exception as exc:
+        _hfc_warn(f"interaction.select forward failed: {exc.__class__.__name__}: {exc}")
+        return _hfc_empty_feishu_callback_response(adapter)
+
+    if isinstance(result, dict) and isinstance(result.get("card"), dict):
+        _hfc_info(f"interaction.select resolved: interaction_id={interaction_id!r}")
+        return _hfc_raw_feishu_callback_response(adapter, result["card"])
+    _hfc_info("interaction.select forwarded but no card returned")
+    return _hfc_empty_feishu_callback_response(adapter)
 
 
 def _hfc_resolve_native_slash_action(
