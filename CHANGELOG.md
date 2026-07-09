@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.2.0
 
 ## Unreleased
 
+## V3.8.17 — 2026-07-09
+
+See also: [docs/release-notes-v3.8.17.md](docs/release-notes-v3.8.17.md)
+
+### Fixed
+- Fixed cron Feishu/Lark card delivery for routing-intent `deliver` values such as `origin`, `all`, and `origin,all`, contributed by @zayn-0101 in PR #77.
+- Cron completions now use scheduler-resolved targets or Feishu origins before falling back to explicit delivery settings, so routing intents no longer short-circuit the platform check into plain-text delivery.
+- `deliver=local` remains local-only/no-delivery, and dict-shaped `deliver` configs continue to support explicit `platform` / `chat_id` values.
+- The installed cron hook pre-resolves delivery targets only when the Hermes scheduler exposes `_resolve_delivery_targets`, keeping the hook fail-open across Hermes versions.
+
+### Tests
+- Added cron coverage for `deliver=origin`, `deliver=all`, `origin,all`, `origin,feishu:...`, dict `deliver`, non-Feishu origins, and `deliver=local`.
+- Updated patcher coverage for optional cron target pre-resolution in the installed hook block.
+
 ## V3.8.16 — 2026-07-09
 
 See also: [docs/release-notes-v3.8.16.md](docs/release-notes-v3.8.16.md)

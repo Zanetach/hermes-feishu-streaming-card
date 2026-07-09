@@ -27,7 +27,9 @@ def test_readme_documents_sidecar_only_and_supported_hermes_version():
     assert "PR #76" in readme
     assert "PR #87" in readme
     assert "PR #88" in readme
+    assert "PR #77" in readme
     assert "colinaaa" in readme
+    assert "zayn-0101" in readme
     assert "你能看到什么" in readme
     assert "适用场景" in readme
     assert "Hermes Agent Gateway 的飞书/Lark 回复变成一张持续更新的交互式卡片" in readme
@@ -143,9 +145,10 @@ def test_readme_documents_one_line_install_and_release_packages():
     assert "install-docker.sh" in readme
     assert "docker-compose.example.yml" in readme
     assert "Docker" in install_doc
-    assert "v3.8.16" in install_doc
+    assert "v3.8.17" in install_doc
     assert "v3.8.5" not in install_doc
     assert "version_source: gateway anchors" in install_doc
+    assert "docs/release-notes-v3.8.17.md" in readme
     assert "docs/release-notes-v3.8.16.md" in readme
     assert "docs/release-notes-v3.8.15.md" in readme
     assert "docs/release-notes-v3.8.14.md" in readme
@@ -181,7 +184,7 @@ def test_readme_documents_one_line_install_and_release_packages():
     assert "bash install.sh" in install_doc
     assert "install.ps1" in install_doc
     assert "HFC_VERSION" in install_doc
-    assert "v3.8.16" in install_doc
+    assert "v3.8.17" in install_doc
     assert "v3.6.6" in install_doc
 
     assert (ROOT / "install.sh").exists()
@@ -198,6 +201,7 @@ def test_readme_documents_one_line_install_and_release_packages():
     assert (ROOT / "docs/roadmap-v3.6.0.md").exists()
     assert (ROOT / "install-docker.sh").exists()
     assert (ROOT / "docker-compose.example.yml").exists()
+    assert (ROOT / "docs/release-notes-v3.8.17.md").exists()
     assert (ROOT / "docs/release-notes-v3.8.16.md").exists()
     assert (ROOT / "docs/release-notes-v3.8.15.md").exists()
     assert (ROOT / "docs/release-notes-v3.8.14.md").exists()
@@ -224,8 +228,9 @@ def test_readme_documents_one_line_install_and_release_packages():
     assert "${NAME}-windows.zip" in workflow
 
 
-def test_v3816_release_notes_are_linked():
+def test_v3817_release_notes_are_linked():
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+    v3817_release_notes = Path("docs/release-notes-v3.8.17.md")
     v3816_release_notes = Path("docs/release-notes-v3.8.16.md")
     v3815_release_notes = Path("docs/release-notes-v3.8.15.md")
     v3814_release_notes = Path("docs/release-notes-v3.8.14.md")
@@ -243,6 +248,18 @@ def test_v3816_release_notes_are_linked():
     release_notes = Path("docs/release-notes-v3.8.2.md")
     compose = Path("docker-compose.example.yml").read_text(encoding="utf-8")
 
+    assert v3817_release_notes.exists()
+    assert "## V3.8.17 — 2026-07-09" in changelog
+    assert "V3.8.17" in changelog
+    assert "[docs/release-notes-v3.8.17.md](docs/release-notes-v3.8.17.md)" in changelog
+    v3817_text = v3817_release_notes.read_text(encoding="utf-8")
+    assert "PR #77" in v3817_text
+    assert "@zayn-0101" in v3817_text
+    assert "deliver" in v3817_text
+    assert "origin" in v3817_text
+    assert "all" in v3817_text
+    assert "local" in v3817_text
+    assert "hermes-feishu-card-v3.8.17-macos.tar.gz" in v3817_text
     assert v3816_release_notes.exists()
     assert "## V3.8.16 — 2026-07-09" in changelog
     assert "V3.8.16" in changelog
@@ -385,13 +402,13 @@ def test_v3816_release_notes_are_linked():
     assert "thinking.delta" in release_text
     assert "feishu-v382-readme-showcase.png" in release_text
     assert "hermes-feishu-card-v3.8.2-macos.tar.gz" in release_text
-    assert 'HFC_VERSION: "${HFC_VERSION:-v3.8.16}"' in compose
+    assert 'HFC_VERSION: "${HFC_VERSION:-v3.8.17}"' in compose
 
 
 def test_todo_points_to_v38_public_plan_docs():
     todo = read_doc("TODO.md")
 
-    assert "## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3 / V3.8.4 / V3.8.5 / V3.8.6 / V3.8.7 / V3.8.8 / V3.8.9 / V3.8.10 / V3.8.11 / V3.8.12 / V3.8.13 / V3.8.14 / V3.8.15 / V3.8.16" in todo
+    assert "## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3 / V3.8.4 / V3.8.5 / V3.8.6 / V3.8.7 / V3.8.8 / V3.8.9 / V3.8.10 / V3.8.11 / V3.8.12 / V3.8.13 / V3.8.14 / V3.8.15 / V3.8.16 / V3.8.17" in todo
     assert "### V3.8.2：卡片 timeline 阅读体验补丁（已完成）" in todo
     assert "### V3.8.3：独立命令卡片（已完成）" in todo
     assert "### V3.8.4：Feishu WebSocket 命令卡片热修（已完成）" in todo
@@ -409,6 +426,9 @@ def test_todo_points_to_v38_public_plan_docs():
     assert "### V3.8.16：话题群 message_id 复用新卡补丁（已完成）" in todo
     assert "PR #88" in todo
     assert "@colinaaa" in todo
+    assert "### V3.8.17：cron 路由意图卡片投递补丁（已完成）" in todo
+    assert "PR #77" in todo
+    assert "@zayn-0101" in todo
     assert "### V3.8.x 后续维护与扩展面（待办）" in todo
     assert "[docs/superpowers/specs/2026-06-30-v3-8-design.md](docs/superpowers/specs/2026-06-30-v3-8-design.md)" in todo
     assert "[docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md](docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md)" in todo
@@ -441,7 +461,9 @@ def test_english_readme_and_docs_are_linked():
     assert "PR #76" in english_readme
     assert "PR #87" in english_readme
     assert "PR #88" in english_readme
+    assert "PR #77" in english_readme
     assert "colinaaa" in english_readme
+    assert "zayn-0101" in english_readme
     assert "setup --hermes-dir" in english_readme
     assert "Hermes Streaming Config" in english_readme
     assert "streaming.enabled" in english_readme

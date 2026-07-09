@@ -101,8 +101,10 @@ def test_apply_patch_013_plus_inserts_cron_delivery_hook():
     patched = patcher.apply_patch(content, strategy="gateway_run_013_plus")
 
     assert patcher.CRON_PATCH_BEGIN in patched
-    assert 'event_name="message.completed"' in patched
     assert '"delivery_kind": "cron"' in patched
+    assert '_hfc_resolve_targets = locals().get("_resolve_delivery_targets")' in patched
+    assert "if callable(_hfc_resolve_targets):" in patched
+    assert 'job["_hfc_resolved_targets"] = _hfc_resolve_targets(job)' in patched
     assert patcher.remove_patch(patched) == content
 
 

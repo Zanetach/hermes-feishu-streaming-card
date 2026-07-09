@@ -92,6 +92,11 @@ From V3.8.16, Feishu/Lark topic groups that reuse the same `message_id` across
 consecutive turns send a fresh card for the second and later messages, while
 duplicate `message.started` events during an active turn still stay ignored.
 
+From V3.8.17, cron jobs using routing-intent delivery values such as `origin`,
+`all`, or `origin,all` resolve to Feishu targets and send cards again. The
+release preserves `deliver=local` as local-only/no delivery and keeps explicit
+dict-shaped `deliver` configs compatible.
+
 Current installers default `PIP_ROOT_USER_ACTION=ignore` so Debian/Ubuntu root
 installs do not print pip's root-user warning. If Python reports
 `externally-managed-environment`, `install.sh` and `install-docker.sh` retry with
@@ -114,7 +119,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 | Variable | Default | Description |
 |---|---|---|
-| `HFC_VERSION` | `latest` | Git tag or branch to install, such as `v3.8.16`, `v3.6.6`, or `main`. |
+| `HFC_VERSION` | `latest` | Git tag or branch to install, such as `v3.8.17`, `v3.6.6`, or `main`. |
 | `HFC_REPO` | `baileyh8/hermes-feishu-streaming-card` | GitHub repository to install from. |
 | `HERMES_DIR` | `~/.hermes/hermes-agent` | Hermes Agent root directory. |
 | `HFC_CONFIG` | `~/.hermes/config.yaml` | Sidecar config path. |
@@ -134,7 +139,7 @@ script selects Hermes venv Python and does not fall back to system Python unless
 ```
 export FEISHU_APP_ID=cli_xxx
 export FEISHU_APP_SECRET=xxx
-export HFC_VERSION=v3.8.16
+export HFC_VERSION=v3.8.17
 bash install-docker.sh
 ```
 

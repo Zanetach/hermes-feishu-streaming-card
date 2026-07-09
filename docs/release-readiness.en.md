@@ -2,7 +2,7 @@
 
 [中文](release-readiness.md) | [English](release-readiness.en.md)
 
-Current package version: `3.8.16`. This release keeps the sidecar-only mainline, preserves V3.8.2 timeline readability, V3.8.10 group diagnostics, the V3.8.11 `/hfc` command-claim fix, V3.8.12 attachment-summary duplicate reply suppression, V3.8.13 Hermes upgrade compatibility, V3.8.14 WebSocket interaction card actions, and V3.8.15 input-attachment duplicate reply suppression, then fixes missing second-turn cards when Feishu/Lark topic groups reuse `message_id`.
+Current package version: `3.8.17`. This release keeps the sidecar-only mainline, preserves V3.8.2 timeline readability, V3.8.10 group diagnostics, the V3.8.11 `/hfc` command-claim fix, V3.8.12 attachment-summary duplicate reply suppression, V3.8.13 Hermes upgrade compatibility, V3.8.14 WebSocket interaction card actions, V3.8.15 input-attachment duplicate reply suppression, and the V3.8.16 reused-topic-`message_id` card fix, then fixes cron `deliver: origin/all` routing intents that fell back to plain text.
 
 ## Ready
 
@@ -17,7 +17,7 @@ Current package version: `3.8.16`. This release keeps the sidecar-only mainline,
 - Hermes `0.13.0+` / `0.14.0` / `0.15.x` / `0.17.x` / `0.18.x` / `v2026.5.16+` / `v2026.6.19+` / `v2026.7.1+` / `v2026.7.7.2` use the `gateway_run_013_plus` hook strategy, while older `v2026.4.x` keeps `legacy_gateway_run`.
 - Feishu card button interactions are covered through local mock acceptance for `interaction.requested`, `/card/actions`, and `/interactions/{interaction_id}`; localhost/private sidecar text fallback is covered through `card.interaction_mode: text`.
 - Feishu thread messages can carry optional `thread_id`; with a reply anchor, the sidecar uses the Feishu reply API to create the initial card in the original thread, and later updates keep PATCHing the same card.
-- Cron delivery can extract chat ids from `deliver: "feishu:oc_xxx"`, avoiding plain-text fallback for scheduled Feishu deliveries.
+- Cron delivery can extract chat ids from `deliver: "feishu:oc_xxx"` and can resolve `deliver: origin`, `deliver: all`, and `origin,all` through Feishu origins or scheduler targets, avoiding plain-text fallback for scheduled Feishu deliveries; `deliver: local` remains no delivery.
 - Long Markdown tables and fenced code blocks over `MAIN_CONTENT_CHUNK_CHARS` are split as complete repeated structures to avoid raw Markdown rendering.
 - Thinking/interim assistant messages use complete `append_block` chunks to avoid delta accumulation truncation or missing text.
 - Runtime event sends, sidecar updates, and terminal PATCH calls are ordered/coalesced for the same message id.

@@ -2,7 +2,7 @@
 
 [中文](release-readiness.md) | [English](release-readiness.en.md)
 
-当前包版本为 `3.8.16`。这一版延续 sidecar-only 主线，保留 V3.8.2 timeline 阅读体验、V3.8.10 群聊诊断、V3.8.11 `/hfc` 命令接管修复、V3.8.12 附件摘要重复 reply 抑制、V3.8.13 Hermes 升级兼容、V3.8.14 WebSocket interaction 按钮闭环、V3.8.15 输入附件重复 reply 抑制，并修复 Feishu/Lark 话题群复用 `message_id` 时第二轮无卡片的问题。
+当前包版本为 `3.8.17`。这一版延续 sidecar-only 主线，保留 V3.8.2 timeline 阅读体验、V3.8.10 群聊诊断、V3.8.11 `/hfc` 命令接管修复、V3.8.12 附件摘要重复 reply 抑制、V3.8.13 Hermes 升级兼容、V3.8.14 WebSocket interaction 按钮闭环、V3.8.15 输入附件重复 reply 抑制、V3.8.16 话题群复用 `message_id` 新卡修复，并修复 cron `deliver: origin/all` 路由意图退回 plain text 的问题。
 
 ## 已具备
 
@@ -17,7 +17,7 @@
 - Hermes `0.13.0+` / `0.14.0` / `0.15.x` / `0.17.x` / `0.18.x` / `v2026.5.16+` / `v2026.6.19+` / `v2026.7.1+` / `v2026.7.7.2` 使用 `gateway_run_013_plus` hook strategy，旧版 `v2026.4.x` 保持 `legacy_gateway_run`。
 - 飞书卡片按钮交互覆盖 `interaction.requested`、`/card/actions`、`/interactions/{interaction_id}` 的本地 mock 验收；localhost/private sidecar 覆盖 `card.interaction_mode: text` fallback。
 - 飞书 thread 消息会携带可选 `thread_id`，有 reply anchor 时通过 Feishu reply API 把初始卡片放回原 thread，后续更新继续 PATCH 同一张卡片。
-- cron delivery 支持从 `deliver: "feishu:oc_xxx"` 提取 chat id，避免定时投递退回 plain text。
+- cron delivery 支持从 `deliver: "feishu:oc_xxx"` 提取 chat id，也支持 `deliver: origin` / `deliver: all` / `origin,all` 先解析到 Feishu origin 或 scheduler targets，避免定时投递退回 plain text；`deliver: local` 仍保持无投递。
 - Markdown 长表格/长代码块超过 `MAIN_CONTENT_CHUNK_CHARS` 后按完整结构重复切分，避免 raw markdown。
 - thinking/interim assistant 使用 `append_block` 完整块追加，避免 delta 累积导致漏字或截断。
 - 同一 message id 的 runtime event 发送、sidecar 更新和终态 PATCH 均有排序/合并保护。

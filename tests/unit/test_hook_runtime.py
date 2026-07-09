@@ -2624,6 +2624,39 @@ def test_build_cron_event_deliver_origin_with_resolved_targets():
     assert payload["chat_id"] == "oc_resolved"
 
 
+def test_build_cron_event_accepts_deliver_dict():
+    payload = hook_runtime.build_cron_event(
+        {
+            "job": {
+                "id": "job-deliver-dict",
+                "deliver": {"platform": "feishu", "chat_id": "oc_from_dict"},
+                "origin": {"platform": "discord", "chat_id": "dc_should_not_leak"},
+            },
+            "content": "dict deliver result",
+        }
+    )
+
+    assert payload is not None
+    assert payload["platform"] == "feishu"
+    assert payload["chat_id"] == "oc_from_dict"
+
+
+def test_build_cron_event_ignores_non_feishu_origin_chat_for_feishu_platform(monkeypatch):
+    monkeypatch.delenv("HERMES_CRON_AUTO_DELIVER_CHAT_ID", raising=False)
+    payload = hook_runtime.build_cron_event(
+        {
+            "job": {
+                "id": "job-non-feishu-origin",
+                "deliver": "feishu",
+                "origin": {"platform": "discord", "chat_id": "dc_should_not_leak"},
+            },
+            "content": "non-feishu origin result",
+        }
+    )
+
+    assert payload is None
+
+
 def test_build_cron_event_deliver_local_returns_none():
     """deliver="local" should return None (no delivery)."""
     assert (
@@ -2679,6 +2712,7 @@ def test_extract_real_platform():
     assert hook_runtime._extract_real_platform("local") == "local"
     assert hook_runtime._extract_real_platform("feishu") == "feishu"
     assert hook_runtime._extract_real_platform("feishu:oc_123") == "feishu"
+    assert hook_runtime._extract_real_platform({"platform": "feishu"}) == "feishu"
     assert hook_runtime._extract_real_platform("origin,feishu:oc_123") == "feishu"
     assert hook_runtime._extract_real_platform("origin,all") == ""
     assert hook_runtime._extract_real_platform("") == ""

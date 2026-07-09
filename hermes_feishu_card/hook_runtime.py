@@ -3225,11 +3225,8 @@ def build_cron_event(local_vars: dict[str, Any]) -> dict[str, Any] | None:
         or os.environ.get("HERMES_CRON_AUTO_DELIVER_PLATFORM")
         or "feishu"
     ).strip().lower()
-    origin_chat_id = (
-        origin.get("chat_id")
-        if origin.get("platform") == "feishu"
-        else ""
-    )
+    origin_platform = str(origin.get("platform") or "").strip().lower()
+    origin_chat_id = origin.get("chat_id") if origin_platform == "feishu" else ""
     chat_id = str(
         resolved_chat_id
         or _deliver_chat_id(job.get("deliver"))
@@ -3356,6 +3353,11 @@ def _extract_real_platform(deliver: Any) -> str:
     """
     if not deliver:
         return ""
+    if isinstance(deliver, dict):
+        platform = _deliver_platform(deliver)
+        if platform in _ROUTING_INTENT_TOKENS:
+            return ""
+        return platform
     text = str(deliver).strip().lower()
     if not text:
         return ""
