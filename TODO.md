@@ -2,7 +2,7 @@
 
 当前 active runtime 是 `hermes_feishu_card/`。legacy adapter、dual mode、旧 `sidecar/`、旧 `patch/` 和 `installer_v2.py` 不是 active runtime，仅保留作历史参考。
 
-## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3 / V3.8.4 / V3.8.5 / V3.8.6 / V3.8.7 / V3.8.8 / V3.8.9 / V3.8.10 / V3.8.11 / V3.8.12 / V3.8.13 / V3.8.14 / V3.8.15
+## V3.8 系列路线：V3.8.0 / V3.8.1 / V3.8.2 / V3.8.3 / V3.8.4 / V3.8.5 / V3.8.6 / V3.8.7 / V3.8.8 / V3.8.9 / V3.8.10 / V3.8.11 / V3.8.12 / V3.8.13 / V3.8.14 / V3.8.15 / V3.8.16
 
 详细路线见 [docs/superpowers/specs/2026-06-30-v3-8-design.md](docs/superpowers/specs/2026-06-30-v3-8-design.md) 和 [docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md](docs/superpowers/plans/2026-06-30-v3-8-card-ux-stability.md)。
 
@@ -133,6 +133,14 @@
 - [x] 最终 answer 明确包含 `MEDIA:/tmp/...` 或本地文件路径时，仍保留 Hermes 原生文件/媒体投递。
 - [x] `media_files`、`image_files`、`audio_files`、`video_files` 等结构化输出媒体字段继续保护原生投递路径。
 - [x] 补齐输入文件 card-only 和显式媒体输出 fail-open 回归测试。
+
+### V3.8.16：话题群 message_id 复用新卡补丁（已完成）
+
+- [x] issue #89 / PR #88：Feishu/Lark 话题群连续消息复用同一 `message_id` 时，第二条及后续消息会重新发送新卡片。
+- [x] 已完成或失败的旧 session 会清理 per-key card delivery 状态，再创建新 session，避免 clarify/approval 第二轮无卡片而挂起。
+- [x] 当前轮仍在 streaming 时，重复 `message.started` 继续 ignored，不会误发第二张卡。
+- [x] 合并时保留贡献者 @colinaaa 的原始 commit，并在 README / release notes 中体现 PR #88 贡献。
+- [x] 补齐 topic reused `message_id` 新卡和 active duplicate started guard 回归测试。
 
 ### V3.8.x 后续维护与扩展面（待办）
 

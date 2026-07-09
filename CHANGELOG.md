@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.2.0
 
 ## Unreleased
 
+## V3.8.16 — 2026-07-09
+
+See also: [docs/release-notes-v3.8.16.md](docs/release-notes-v3.8.16.md)
+
+### Fixed
+- Fixed issue #89, contributed by @colinaaa in PR #88: Feishu/Lark topic groups that reuse the same `message_id` across consecutive turns now send a fresh card for the second and later messages.
+- Completed or failed sessions with a reused topic `message_id` now discard stale per-key delivery state before creating the new card, so clarify/approval turns do not hang without an interaction card.
+- Duplicate `message.started` events while the current turn is still active remain ignored, preventing spurious extra cards.
+
+### Tests
+- Added integration coverage for reused completed topic `message_id` values creating a new card.
+- Added a guard proving active duplicate `message.started` events still do not send a second card.
+
 ## V3.8.15 — 2026-07-09
 
 See also: [docs/release-notes-v3.8.15.md](docs/release-notes-v3.8.15.md)

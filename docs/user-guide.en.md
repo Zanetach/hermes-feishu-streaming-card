@@ -34,6 +34,7 @@ Since V3.8.2, the final answer stays in the primary content area while pre-tool 
 - **More resilient Hermes upgrades**: Since V3.8.13, the installer treats verifiable `gateway/run.py` anchors as the final compatibility gate. Version metadata supports newer shapes such as `v2026.7.7.2` and `Hermes Agent v0.18.2 (...)`, and fully unparseable version text can still proceed when anchors validate.
 - **WebSocket interaction loop**: Since V3.8.14, agent clarify/approval buttons can resolve through native Feishu/Lark WebSocket `interaction.select` card actions and return to the sidecar.
 - **Input attachments no longer duplicate replies**: Since V3.8.15, input `.docx/files` context stays as card attachment summaries and no longer keeps Hermes' native final text reply.
+- **Second topic turns keep card rendering**: Since V3.8.16, Feishu/Lark topic groups that reuse the same `message_id` create a fresh card for the second and later messages.
 - **Long content protection**: Markdown tables and fenced code blocks split on structure boundaries instead of raw character cuts.
 - **Richer tool details**: `tool.updated` can show argument summaries, duration, and failure reason while keeping long details compact.
 - **Multi-bot / multi-profile**: bot registry, chat bindings, profile-aware session keys, titles, and routing diagnostics.
@@ -55,6 +56,16 @@ Since V3.8.2, the final answer stays in the primary content area while pre-tool 
 | Long tables/code blocks render as raw Markdown | Markdown-aware table/code splitting with repeated headers and complete fences |
 | Multi-bot, group, and profile routing is hard to inspect | `bindings.chats`, safe `group_rules` diagnostics, profile-aware sessions, and `/health.routing` diagnostics |
 | Hook or sidecar failures are hard to debug | `doctor`, runtime import checks, `/health` metrics, fail-closed installer, restore/uninstall |
+
+## V3.8.16 Topic-Group Reused `message_id` Patch
+
+V3.8.16 merges PR #88 from @colinaaa and fixes issue #89: in Feishu/Lark topic groups, consecutive turns can reuse the same `message_id`. After the first turn completed, the second turn's `message.started` collided with the old completed session and no new card was sent. If that second turn triggered clarify/approval, the interaction card never appeared.
+
+- **Fresh cards for second and later topic turns**: when a reused topic `message_id` points at a completed or failed session, the sidecar clears the stale card id, bot id, card config, and flush controller before creating a new session and sending a new card.
+- **Clarify/approval no longer hangs without a card**: second-turn `interaction.requested` flows can render their interaction card again.
+- **Active duplicate starts stay safe**: duplicate `message.started` events while the current turn is still streaming remain ignored, so normal retries do not produce extra cards.
+
+Full release notes: [docs/release-notes-v3.8.16.md](release-notes-v3.8.16.md).
 
 ## V3.8.15 Input-Attachment Duplicate Reply Patch
 
@@ -336,7 +347,7 @@ Common environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `HFC_VERSION` | `latest` | Version to install, such as `v3.8.15`, `v3.6.6`, or `main` |
+| `HFC_VERSION` | `latest` | Version to install, such as `v3.8.16`, `v3.6.6`, or `main` |
 | `HERMES_DIR` | `~/.hermes/hermes-agent` | Hermes Agent Gateway directory |
 | `HFC_CONFIG` | `~/.hermes/config.yaml` | sidecar config path |
 | `HFC_ENV_FILE` | `.env` next to `HFC_CONFIG` | Feishu credential file |
@@ -363,7 +374,7 @@ Example:
 ```bash
 export FEISHU_APP_ID=cli_xxx
 export FEISHU_APP_SECRET=xxx
-export HFC_VERSION=v3.8.15
+export HFC_VERSION=v3.8.16
 bash install-docker.sh
 ```
 
@@ -399,7 +410,7 @@ python3 -m hermes_feishu_card.cli setup --hermes-dir ~/.hermes/hermes-agent --ye
 
 ## Upgrading
 
-Upgrading from V3.2.x/V3.3.0/V3.4.x/V3.5.x/V3.6.x/V3.7.x/V3.8.0-V3.8.14 to V3.8.15 is backward-compatible. **Single-profile configs need no changes.** If Hermes uses its own venv, rerun `setup` or `install` after upgrading so the package also lands in the Hermes runtime Python and the hook is refreshed. V3.8.15 keeps V3.8.10 group diagnostics, the V3.8.11 `/hfc` command-claim fix, V3.8.12 attachment-summary duplicate reply suppression, V3.8.13 Hermes upgrade compatibility, and V3.8.14 WebSocket interaction card actions, then fixes a duplicate native final reply recurrence when input `.docx/files` context is present; run `doctor --explain` once after upgrading and verify a normal chat, a topic reply, and the target group with a normal prompt, `/hfc status`, `/new`, `/model`, and one prompt with an input attachment.
+Upgrading from V3.2.x/V3.3.0/V3.4.x/V3.5.x/V3.6.x/V3.7.x/V3.8.0-V3.8.15 to V3.8.16 is backward-compatible. **Single-profile configs need no changes.** If Hermes uses its own venv, rerun `setup` or `install` after upgrading so the package also lands in the Hermes runtime Python and the hook is refreshed. V3.8.16 keeps V3.8.10 group diagnostics, the V3.8.11 `/hfc` command-claim fix, V3.8.12 attachment-summary duplicate reply suppression, V3.8.13 Hermes upgrade compatibility, V3.8.14 WebSocket interaction card actions, and V3.8.15 input-attachment duplicate reply suppression, then fixes missing cards when Feishu/Lark topic groups reuse `message_id` across consecutive turns; run `doctor --explain` once after upgrading and verify a normal chat, a topic reply, the target group with `/hfc status`, `/new`, `/model`, and two consecutive messages in the same topic.
 
 ```bash
 # 1. Stop sidecar
@@ -407,7 +418,7 @@ python3 -m hermes_feishu_card.cli stop --config ~/.hermes_feishu_card/config.yam
 
 # 2. Update code
 cd /path/to/hermes-feishu-streaming-card
-git checkout v3.8.15 && pip install -e ".[test]" --upgrade
+git checkout v3.8.16 && pip install -e ".[test]" --upgrade
 
 # 3. Diagnose Hermes hook strategy and anchors
 python3 -m hermes_feishu_card.cli doctor --config ~/.hermes_feishu_card/config.yaml --hermes-dir ~/.hermes/hermes-agent
@@ -579,6 +590,7 @@ The Hermes hook converts `message.started` / `thinking.delta` / `answer.delta` /
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| [v3.8.16](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.8.16) | 2026-07 | issue #89 / PR #88: topic groups that reuse `message_id` send a fresh card for the second and later messages |
 | [v3.8.15](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.8.15) | 2026-07 | issue #82 follow-up: input `.docx/files` context no longer keeps a duplicate native final reply |
 | [v3.8.14](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.8.14) | 2026-07 | issue #86 / PR #87: agent clarify/approval `interaction.select` buttons resolve through Feishu/Lark WebSocket-native card actions |
 | [v3.8.13](https://github.com/baileyh8/hermes-feishu-streaming-card/releases/tag/v3.8.13) | 2026-07 | Hermes `v2026.7.7.2` / `0.18.2` upgrade compatibility, anchor fallback, and stale install-state repair |
@@ -649,6 +661,7 @@ Thanks to these contributors for improving the project:
 - [gischuck](https://github.com/gischuck) — [PR #76](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/76) reasoning/tool timeline UX proposal and implementation exploration (V3.8.x)
 - [fengs2021](https://github.com/fengs2021) — [PR #17](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/17) lock optimization and update interval improvement (V3.3.0)
 - [colinaaa](https://github.com/colinaaa) — [PR #87](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/87) WebSocket `interaction.select` clarify/approval card interaction support (V3.8.14)
+- [colinaaa](https://github.com/colinaaa) — [PR #88](https://github.com/baileyh8/hermes-feishu-streaming-card/pull/88) fresh cards for second turns when Feishu topic groups reuse `message_id` (V3.8.16)
 
 ## Security
 

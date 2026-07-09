@@ -2,7 +2,7 @@
 
 [中文](release-readiness.md) | [English](release-readiness.en.md)
 
-当前包版本为 `3.8.15`。这一版延续 sidecar-only 主线，保留 V3.8.2 timeline 阅读体验、V3.8.10 群聊诊断、V3.8.11 `/hfc` 命令接管修复、V3.8.12 附件摘要重复 reply 抑制、V3.8.13 Hermes 升级兼容、V3.8.14 WebSocket interaction 按钮闭环，并修复输入 `.docx/files` 上下文误放行原生最终 reply 的复现。
+当前包版本为 `3.8.16`。这一版延续 sidecar-only 主线，保留 V3.8.2 timeline 阅读体验、V3.8.10 群聊诊断、V3.8.11 `/hfc` 命令接管修复、V3.8.12 附件摘要重复 reply 抑制、V3.8.13 Hermes 升级兼容、V3.8.14 WebSocket interaction 按钮闭环、V3.8.15 输入附件重复 reply 抑制，并修复 Feishu/Lark 话题群复用 `message_id` 时第二轮无卡片的问题。
 
 ## 已具备
 
@@ -24,6 +24,7 @@
 - 新版 Hermes 流如果直接以 `answer.delta`、`thinking.delta`、`tool.updated` 或 `message.completed` 开始，也会创建初始 Feishu/Lark 卡片。
 - Hermes 原生 `Working` 心跳、上下文窗口/压缩提示、自动 session reset、skill 加载和自我改进 review 会归一为 `system.notice`，优先进入当前卡片 timeline；任务外提示会发送独立小卡片。
 - 飞书/Lark 话题回复里，后续 `answer.delta`、`thinking.delta`、`tool.updated` 和 `system.notice` 即使使用不同内部流式 `message_id`，也会通过 `reply_to_message_id` 回到同一张卡片，避免 topic timeline 停住或灰色原生提示重复外溢。
+- 飞书/Lark 话题群如果连续消息复用同一 `message_id`，已完成或失败的旧 session 会被清理并创建新卡片；当前轮仍在 streaming 时，重复 `message.started` 继续 ignored，避免误发第二张卡。
 - Gateway runtime 会在 Hermes 进程内合并高频 `thinking.delta` / `answer.delta`，覆盖 V3.8.1 的 issue #74，降低 stream-reader 线程压力。
 - terminal event 前会 flush 同一消息 pending delta，避免最终卡片缺少尾部内容。
 - 飞书内 `/hfc help/status/doctor/monitor` 提供只读诊断卡片，且只展示 hash 后的上下文 id。
