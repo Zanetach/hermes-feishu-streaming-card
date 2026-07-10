@@ -293,22 +293,33 @@ async def test_operations_callbacks_keep_full_recovery_fingerprint_internal(monk
 
 
 def operations_button(card, label):
-    for element in card["body"]["elements"]:
-        if element.get("tag") == "button":
-            text = element.get("text")
-            behaviors = element.get("behaviors")
-            if (
-                isinstance(text, dict)
-                and text.get("content") == label
-                and isinstance(behaviors, list)
-                and behaviors
-                and isinstance(behaviors[0], dict)
-                and isinstance(behaviors[0].get("value"), dict)
-            ):
-                return behaviors[0]["value"]
-        for button in element.get("actions", []):
-            if button["text"]["content"] == label:
-                return button["value"]
+    def find_button(elements):
+        for element in elements:
+            if element.get("tag") == "button":
+                text = element.get("text")
+                behaviors = element.get("behaviors")
+                if (
+                    isinstance(text, dict)
+                    and text.get("content") == label
+                    and isinstance(behaviors, list)
+                    and behaviors
+                    and isinstance(behaviors[0], dict)
+                    and isinstance(behaviors[0].get("value"), dict)
+                ):
+                    return behaviors[0]["value"]
+            if element.get("tag") == "column_set":
+                for column in element.get("columns", []):
+                    value = find_button(column.get("elements", []))
+                    if value is not None:
+                        return value
+            for button in element.get("actions", []):
+                if button["text"]["content"] == label:
+                    return button["value"]
+        return None
+
+    value = find_button(card["body"]["elements"])
+    if value is not None:
+        return value
     raise AssertionError(f"missing operations button: {label}")
 
 
