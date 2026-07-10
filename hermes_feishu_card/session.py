@@ -53,6 +53,8 @@ class CardSession:
     created_at: float = field(default_factory=_now)
     updated_at: float = field(default_factory=_now)
     status: str = "thinking"
+    display_status: str = ""
+    display_status_source: str = "session"
     last_sequence: int = -1
     thinking_text: str = ""
     answer_text: str = ""
@@ -99,6 +101,9 @@ class CardSession:
         if self.status in {"completed", "failed"}:
             return False
         self.last_sequence = max(self.last_sequence, event.sequence)
+
+        self.display_status = event.display_status
+        self.display_status_source = "explicit" if event.display_status else "session"
 
         if event.event == "thinking.delta":
             mode = str(event.data.get("mode") or "delta").strip().lower()

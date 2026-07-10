@@ -464,6 +464,43 @@ def test_build_completed_event_preserves_duration_and_tokens():
     }
 
 
+@pytest.mark.parametrize(
+    ("event_name", "display_status"),
+    [
+        ("message.completed", "in_progress"),
+        ("message.failed", "failed"),
+    ],
+)
+def test_terminal_event_carries_exact_explicit_display_status(event_name, display_status):
+    payload = hook_runtime.build_event(
+        event_name,
+        {
+            "chat_id": "oc_abc",
+            "message_id": "msg_status",
+            "answer": "最终答案",
+            "error": "处理失败",
+            "display_status": display_status,
+        },
+    )
+
+    assert payload["data"]["display_status"] == display_status
+
+
+@pytest.mark.parametrize("display_status", ["running", "COMPLETED", " completed "])
+def test_terminal_event_omits_invalid_explicit_display_status(display_status):
+    payload = hook_runtime.build_event(
+        "message.completed",
+        {
+            "chat_id": "oc_abc",
+            "message_id": "msg_status",
+            "answer": "最终答案",
+            "display_status": display_status,
+        },
+    )
+
+    assert "display_status" not in payload["data"]
+
+
 def test_build_interaction_event_reuses_active_card_message_id():
     local_vars = {
         "chat_id": "oc_abc",

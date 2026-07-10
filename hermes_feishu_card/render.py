@@ -4,9 +4,10 @@ import ast
 import json
 import re
 import time as _time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .session import CardSession
+from .status import StatusConfig, resolve_display_status
 from .text import normalize_stream_text, split_markdown_blocks
 
 DEFAULT_FOOTER_FIELDS = (
@@ -65,8 +66,9 @@ def render_card(
     max_timeline_items: int = 12,
     max_reasoning_chars: int = 1200,
     max_tool_result_chars: int = 600,
+    status_config: Optional[StatusConfig] = None,
 ) -> Dict[str, Any]:
-    status = _render_status(session)
+    status = _render_status(session, status_config=status_config)
     primary_text = normalize_stream_text(session.answer_text)
     if not primary_text:
         if session.status == "thinking":
@@ -129,19 +131,22 @@ def render_card(
     }
 
 
-def _render_status(session: CardSession) -> Dict[str, str]:
+def _render_status(
+    session: CardSession, *, status_config: Optional[StatusConfig] = None
+) -> Dict[str, str]:
     if session.delivery_kind == "notice":
         return {
             "subtitle": "已完成" if session.status == "completed" else "",
             "template": _notice_template(session.notice_level),
         }
-    if session.status == "completed":
+    display_status = resolve_display_status(session, status_config or StatusConfig.defaults()).value
+    if display_status == "completed":
         return {"subtitle": "已完成", "template": "green"}
-    if session.status == "failed":
+    if display_status == "failed":
         return {"subtitle": "处理失败", "template": "red"}
-    if session.active_interaction is not None and session.active_interaction.status == "pending":
+    if display_status == "waiting":
         return {"subtitle": "等待选择", "template": "orange"}
-    if normalize_stream_text(session.answer_text).strip():
+    if display_status == "in_progress":
         return {"subtitle": "", "summary": "生成中", "template": "blue"}
     return {"subtitle": "", "summary": "思考中", "template": "indigo"}
 

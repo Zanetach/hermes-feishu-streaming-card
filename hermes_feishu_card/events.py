@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import math
 from typing import Any, Dict
 
+from .status import normalize_display_status
+
 SUPPORTED_EVENTS = {
     "message.started",
     "thinking.delta",
@@ -34,6 +36,10 @@ class SidecarEvent:
     created_at: float
     data: Dict[str, Any]
     thread_id: str = ""
+
+    @property
+    def display_status(self) -> str:
+        return normalize_display_status(self.data.get("display_status"))
 
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "SidecarEvent":

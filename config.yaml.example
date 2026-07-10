@@ -27,6 +27,25 @@ card:
   interaction_mode: auto
   max_wait_ms: 800
   max_chars: 240
+  # Optional conservative handoff inference. Both an active marker and a future
+  # marker must appear; explicit event data.display_status always wins.
+  status:
+    active_markers:
+      - 正在收集
+      - 数据收集中
+      - 资料收集中
+      - 处理中
+      - working on
+      - gathering
+      - collecting
+    future_markers:
+      - 到位后
+      - 完成后我会继续
+      - 我会继续
+      - will continue
+      - once available
+      - when it arrives
+      - when ready
   # Footer fields and order. Supported values:
   # duration, model, input_tokens, output_tokens, context
   footer_fields:

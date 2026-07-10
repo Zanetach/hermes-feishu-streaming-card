@@ -19,6 +19,8 @@ from typing import Any
 from urllib import parse
 from urllib import request
 
+from .status import normalize_display_status
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_EVENT_URL = "http://127.0.0.1:8765/events"
@@ -3457,6 +3459,9 @@ def _event_data(
         "profile_id": profile_id,
         "profile_source": profile_source,
     }
+    display_status = normalize_display_status(local_vars.get("display_status"))
+    if display_status:
+        data["display_status"] = display_status
     reply_to_message_id = _reply_to_message_id_from_runtime(
         local_vars,
         message_obj,

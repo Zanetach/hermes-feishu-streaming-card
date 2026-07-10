@@ -23,6 +23,25 @@ def test_parses_valid_event():
     assert event.sequence == 2
 
 
+def test_event_exposes_optional_exact_display_status():
+    payload = valid_payload(event="message.completed")
+    payload["data"] = {"answer": "稍后继续", "display_status": "in_progress"}
+
+    event = SidecarEvent.from_dict(payload)
+
+    assert event.display_status == "in_progress"
+
+
+@pytest.mark.parametrize("value", [None, "", "running", "COMPLETED", " completed "])
+def test_event_ignores_invalid_optional_display_status(value):
+    payload = valid_payload(event="message.completed")
+    payload["data"] = {"answer": "最终答案", "display_status": value}
+
+    event = SidecarEvent.from_dict(payload)
+
+    assert event.display_status == ""
+
+
 @pytest.mark.parametrize(
     "event_name",
     ["interaction.requested", "interaction.completed", "interaction.failed"],

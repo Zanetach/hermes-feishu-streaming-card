@@ -1,5 +1,6 @@
 from hermes_feishu_card.render import _SPINNER_FRAMES, render_card
 from hermes_feishu_card.session import CardSession, ToolState
+from hermes_feishu_card.status import StatusConfig
 import time
 
 
@@ -46,6 +47,79 @@ def test_render_completed_card_replaces_thinking():
     assert card["header"]["subtitle"]["content"] == "已完成"
     assert "最终答案" in content
     assert "不会展示" not in content
+
+
+def test_v3818_normal_completed_card_keeps_element_order_and_configured_footer():
+    session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    session.status = "completed"
+    session.answer_text = "最终答案"
+    session.duration = 3.0
+    session.model = "MiniMax M2.7"
+    session.tokens = {"output_tokens": 34}
+
+    card = render_card(session, footer_fields=["model", "duration", "output_tokens"])
+
+    assert [element["element_id"] for element in card["body"]["elements"]] == [
+        "main_content",
+        "main_divider",
+        "tool_summary",
+        "footer",
+    ]
+    assert card["body"]["elements"][-1] == {
+        "tag": "markdown",
+        "element_id": "footer",
+        "content": "MiniMax M2.7 · 3s · ↓34",
+        "text_size": "x-small",
+    }
+
+
+def test_v3818_normal_failed_card_keeps_element_order_and_footer():
+    session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    session.status = "failed"
+    session.answer_text = "处理失败"
+
+    card = render_card(session, footer_fields=["model", "duration"])
+
+    assert [element["element_id"] for element in card["body"]["elements"]] == [
+        "main_content",
+        "main_divider",
+        "tool_summary",
+        "footer",
+    ]
+    assert card["body"]["elements"][-1]["content"] == "已停止"
+
+
+def test_progress_handoff_changes_only_header_status_from_completed_card():
+    answer = "数据收集中，数据到位后我会继续生成报告。"
+    completed = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    completed.status = "completed"
+    completed.display_status = "completed"
+    completed.answer_text = answer
+    inferred = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    inferred.status = "completed"
+    inferred.answer_text = answer
+
+    completed_card = render_card(completed)
+    inferred_card = render_card(inferred)
+
+    assert completed_card["header"]["template"] == "green"
+    assert completed_card["header"]["subtitle"]["content"] == "已完成"
+    assert inferred_card["header"]["template"] == "blue"
+    assert "subtitle" not in inferred_card["header"]
+    assert inferred_card["config"]["summary"]["content"] == "生成中"
+    assert inferred_card["body"] == completed_card["body"]
+
+
+def test_render_status_uses_custom_conservative_marker_pairs():
+    session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    session.status = "completed"
+    session.answer_text = "queued now; resume later"
+    config = StatusConfig(active_markers=("queued",), future_markers=("resume later",))
+
+    card = render_card(session, status_config=config)
+
+    assert card["header"]["template"] == "blue"
+    assert card["config"]["summary"]["content"] == "生成中"
 
 
 def test_render_pending_interaction_as_buttons():

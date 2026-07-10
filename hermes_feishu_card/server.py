@@ -23,6 +23,7 @@ from .lifecycle import (
 from .metrics import SidecarMetrics
 from .render import render_card
 from .session import CardSession
+from .status import StatusConfig
 
 FEISHU_CLIENT_KEY = web.AppKey("feishu_client", Any)
 SESSIONS_KEY = web.AppKey("sessions", dict)
@@ -1206,6 +1207,7 @@ def _render_session_card(request: web.Request, session: CardSession) -> dict[str
         max_tool_result_chars=_safe_positive_int(
             card_config.get("max_tool_result_chars"), 600
         ),
+        status_config=StatusConfig.from_mapping(card_config.get("status")),
     )
 
 

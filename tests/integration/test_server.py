@@ -932,6 +932,39 @@ async def test_card_config_string_booleans_control_timeline_rendering(
     assert thought_text in str(timeline)
 
 
+async def test_card_config_custom_status_markers_reach_renderer():
+    feishu_client = FakeFeishuClient()
+    app = create_app(
+        feishu_client,
+        card_config={
+            "status": {
+                "active_markers": ["queued"],
+                "future_markers": ["resume later"],
+            }
+        },
+    )
+    server = TestServer(app)
+    test_client = TestClient(server)
+    await test_client.start_server()
+    try:
+        response = await test_client.post(
+            "/events",
+            json=event_payload(
+                "message.completed",
+                1,
+                {"answer": "Queued now; resume later."},
+            ),
+        )
+    finally:
+        await test_client.close()
+
+    assert response.status == 200
+    card = feishu_client.sent[0][1]
+    assert card["header"]["template"] == "blue"
+    assert "subtitle" not in card["header"]
+    assert card["config"]["summary"]["content"] == "生成中"
+
+
 async def test_message_started_sends_card_as_thread_reply(client):
     test_client, feishu_client = client
 
