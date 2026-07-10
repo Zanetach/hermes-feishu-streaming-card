@@ -100,6 +100,36 @@ def test_command_proof_rejects_stale_timestamp_and_wrong_root():
         CommandProofVerifier(b"x" * 32, now=lambda: 100.0).verify(signed)
 
 
+def test_command_proof_nonce_capacity_fails_closed_until_entries_expire():
+    secret = b"r" * 32
+    clock = [100.0]
+    verifier = CommandProofVerifier(secret, now=lambda: clock[0], max_nonces=2)
+
+    def signed_payload(nonce: str, timestamp: int) -> dict[str, object]:
+        payload = command_payload()
+        return {
+            **payload,
+            "adapter_command_proof": sign_command_transport_proof(
+                secret,
+                payload,
+                timestamp=timestamp,
+                nonce=nonce,
+            ),
+        }
+
+    first = signed_payload("nonce-0000000001", 100)
+    verifier.verify(first)
+    verifier.verify(signed_payload("nonce-0000000002", 100))
+
+    with pytest.raises(TransportAuthenticationError, match="overloaded"):
+        verifier.verify(signed_payload("nonce-0000000003", 100))
+    with pytest.raises(TransportAuthenticationError, match="replayed"):
+        verifier.verify(first)
+
+    clock[0] = 131.0
+    verifier.verify(signed_payload("nonce-0000000004", 131))
+
+
 def test_operation_transport_secret_is_deterministic_and_scoped():
     root = b"r" * 32
 

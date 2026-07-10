@@ -91,6 +91,7 @@ class OperationStore:
         self._now = now
         self._max_records = max_records
         self._records: dict[str, OperationRecord] = {}
+        self._recheck_predecessors: dict[str, OperationRecord] = {}
         self._transport_secrets: dict[str, bytes] = {}
         self._lock = threading.RLock()
 
@@ -192,7 +193,9 @@ class OperationStore:
         successor_recovery_fingerprint: str,
     ) -> tuple[OperationRecord, bool]:
         with self._lock:
-            claims, record = self._verify_token_locked(token)
+            claims, record = self._verify_token_locked(
+                token, allow_recheck_predecessor=True
+            )
             self._verify_callback_locked(
                 claims,
                 record,
@@ -213,7 +216,9 @@ class OperationStore:
             if transport_secret is None:
                 raise OperationRejected("operation transport binding expired")
             self._prune_locked()
-            self._reserve_capacity_locked(frozenset({record.operation_id}))
+            replace_predecessor = len(self._records) >= self._max_records
+            if not replace_predecessor:
+                self._reserve_capacity_locked(frozenset({record.operation_id}))
             successor = OperationRecord(
                 operation_id=secrets.token_urlsafe(18),
                 chat_id=record.chat_id,
@@ -225,14 +230,23 @@ class OperationStore:
                 state="diagnosed",
                 expires_at=self._now() + 120.0,
             )
+            record.successor_operation_id = successor.operation_id
+            if replace_predecessor:
+                self._remove_locked(record.operation_id)
+                self._recheck_predecessors[record.operation_id] = record
+                self._transport_secrets[record.operation_id] = transport_secret
             self._records[successor.operation_id] = successor
             self._transport_secrets[successor.operation_id] = transport_secret
-            record.successor_operation_id = successor.operation_id
             return successor, True
 
     def _remove_locked(self, operation_id: str) -> None:
         self._records.pop(operation_id, None)
         self._transport_secrets.pop(operation_id, None)
+        self._recheck_predecessors.pop(operation_id, None)
+        for predecessor_id, predecessor in list(self._recheck_predecessors.items()):
+            if predecessor.successor_operation_id == operation_id:
+                self._recheck_predecessors.pop(predecessor_id, None)
+                self._transport_secrets.pop(predecessor_id, None)
 
     def token(self, record: OperationRecord, action: str) -> str:
         payload = json.dumps(
@@ -277,7 +291,9 @@ class OperationStore:
             if abs(self._now() - timestamp) > _TRANSPORT_PROOF_MAX_AGE_SECONDS:
                 raise OperationRejected("transport proof expired")
             operation_id = self._operation_id_from_token_locked(token)
-            record = self._records.get(operation_id)
+            record = self._records.get(operation_id) or self._recheck_predecessors.get(
+                operation_id
+            )
             if record is None:
                 raise OperationRejected("invalid transport proof")
             secret = self._transport_secrets.get(record.operation_id)
@@ -394,7 +410,10 @@ class OperationStore:
             return record
 
     def _verify_token_locked(
-        self, token: str
+        self,
+        token: str,
+        *,
+        allow_recheck_predecessor: bool = False,
     ) -> tuple[OperationClaims, OperationRecord]:
         try:
             if not isinstance(token, str) or not token or len(token) > _TOKEN_MAX_CHARS:
@@ -429,6 +448,8 @@ class OperationStore:
             if not claims.operation_id or not claims.action:
                 raise ValueError
             record = self._records.get(claims.operation_id)
+            if record is None and allow_recheck_predecessor:
+                record = self._recheck_predecessors.get(claims.operation_id)
             if record is None:
                 raise OperationRejected("operation expired")
             expected = self._signature(encoded, record)

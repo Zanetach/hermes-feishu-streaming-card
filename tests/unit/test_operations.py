@@ -529,6 +529,58 @@ def test_successor_inherits_transport_binding_when_store_is_at_capacity():
     ) is successor
 
 
+def test_recheck_successor_replaces_stable_predecessor_at_capacity():
+    store = OperationStore(secret=b"store", now=lambda: 100.0, max_records=2)
+    transport_secret = b"adapter-process-local-proof"
+    previous = store.create(
+        group=False,
+        transport_secret=transport_secret,
+        **operation_kwargs(),
+    )
+    inflight = store.create(group=False, **operation_kwargs())
+    inflight.state = "executing"
+    token = store.token(previous, "recheck")
+    recheck_kwargs = {
+        "callback_chat_id": "oc_group",
+        "callback_profile_id": "default",
+        "callback_profile_scope": store.scope_fingerprint(previous),
+        "callback_report_fingerprint": "report-123",
+        "callback_recovery_fingerprint": "recovery-123",
+        "successor_report_fingerprint": "report-123",
+        "successor_recovery_fingerprint": "recovery-123",
+    }
+
+    successor, created = store.recheck_successor(token, **recheck_kwargs)
+    repeated, repeated_created = store.recheck_successor(token, **recheck_kwargs)
+
+    assert created is True
+    assert repeated_created is False
+    assert repeated is successor
+    assert previous.operation_id not in store._records
+    assert set(store._records) == {inflight.operation_id, successor.operation_id}
+    assert store.complete(
+        inflight.operation_id,
+        expected_state="executing",
+        state="repaired",
+        result={},
+    ).state == "repaired"
+
+    successor_token = store.token(successor, "details")
+    transport_fields = {
+        "token": successor_token,
+        "action": "details",
+        "callback_chat_id": "oc_group",
+        "callback_profile_id": "default",
+        "callback_profile_scope": store.scope_fingerprint(successor),
+        "operator_open_id": "ou_owner",
+        "timestamp": 100,
+    }
+    assert store.verify_transport_proof(
+        proof=sign_transport_proof(transport_secret, **transport_fields),
+        **transport_fields,
+    ) is successor
+
+
 def report(*, executable: bool = True) -> DiagnosticReport:
     return DiagnosticReport(
         status="warning",

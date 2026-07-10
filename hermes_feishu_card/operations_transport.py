@@ -130,6 +130,8 @@ class CommandProofVerifier:
     ):
         if not isinstance(secret, bytes) or len(secret) != _ROOT_SECRET_BYTES:
             raise ValueError("command transport root is invalid")
+        if max_nonces < 1:
+            raise ValueError("max_nonces must be positive")
         self._secret = secret
         self._now = now
         self._max_nonces = max_nonces
@@ -174,8 +176,7 @@ class CommandProofVerifier:
             if nonce in self._nonces:
                 raise TransportAuthenticationError("command proof replayed")
             if len(self._nonces) >= self._max_nonces:
-                oldest = next(iter(self._nonces))
-                self._nonces.pop(oldest, None)
+                raise TransportAuthenticationError("command proof verifier overloaded")
             self._nonces[nonce] = timestamp + _PROOF_MAX_AGE_SECONDS
 
     def _prune_nonces_locked(self, now: float) -> None:
