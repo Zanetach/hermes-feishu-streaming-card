@@ -990,8 +990,12 @@ def test_v390_documents_operations_reliability_release_gate():
     acceptance = read_doc("docs/wiki/feishu-acceptance.md")
     release_notes = read_doc("docs/release-notes-v3.9.0.md")
 
-    assert "V3.9.0" in changelog
-    assert "docs/release-notes-v3.9.0.md" in changelog
+    unreleased = re.search(r"(?ms)^## Unreleased\n.*?(?=^## V3\.8\.18|\Z)", changelog).group(0)
+    assert "[docs/release-notes-v3.9.0.md](docs/release-notes-v3.9.0.md)" in unreleased
+    assert "operations and reliability foundation" in unreleased
+    assert "PR #84" in unreleased
+    assert "@Zanetach" in unreleased
+    assert "## V3.9.0 —" not in changelog
     assert "安全修复" in readme
     assert "profile" in install_doc.lower()
     assert "group" in acceptance.lower()
@@ -1059,6 +1063,7 @@ def test_v390_documents_operations_reliability_release_gate():
     assert "Pending release" in release_notes
     assert "tag has not been created" in release_notes
     assert "assets have not been created" in release_notes
+    assert "Pending real Feishu acceptance" in release_notes
     assert not re.search(r"(?im)^released:\s*\d{4}-\d{2}-\d{2}", release_notes)
     assert "has been released" not in release_notes.lower()
     assert "待验收" in readiness
