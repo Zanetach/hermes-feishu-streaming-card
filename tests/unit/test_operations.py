@@ -717,6 +717,135 @@ def test_recheck_successor_replaces_stable_predecessor_at_capacity():
     ) is successor
 
 
+def _prepared_diagnosed_operation(
+    store: OperationStore,
+    *,
+    operation_id: str,
+    diagnostic_report: DiagnosticReport,
+    group: bool = False,
+    initiator_open_id: str = "",
+    transport_secret: bytes = b"adapter-process-local-proof",
+):
+    preparing, created = store.prepare(
+        chat_id="oc_group",
+        profile_id="default",
+        group=group,
+        initiator_open_id=initiator_open_id,
+        operation_id=operation_id,
+        transport_secret=transport_secret,
+        idempotency_key=f"doctor-{operation_id}",
+    )
+
+    assert created is True
+    return store.diagnose(preparing.operation_id, report=diagnostic_report)
+
+
+def _recheck_callback(store: OperationStore, operation: object) -> dict[str, str]:
+    return {
+        "callback_chat_id": "oc_group",
+        "callback_profile_id": "default",
+        "callback_profile_scope": store.scope_fingerprint(operation),
+        "callback_report_fingerprint": operation.report_fingerprint,
+        "callback_recovery_fingerprint": operation.recovery_fingerprint,
+    }
+
+
+def test_diagnose_retains_report_snapshot_in_memory():
+    store = OperationStore(secret=b"store", now=lambda: 100.0)
+    snapshot = report()
+
+    diagnosed = _prepared_diagnosed_operation(
+        store,
+        operation_id="operation-snapshot",
+        diagnostic_report=snapshot,
+    )
+
+    assert diagnosed.report is snapshot
+    assert diagnosed.report_fingerprint == snapshot.fingerprint
+    assert diagnosed.recovery_fingerprint == snapshot.recovery_fingerprint
+
+
+def test_begin_recheck_creates_preparing_successor_from_report_snapshot():
+    store = OperationStore(secret=b"store", now=lambda: 100.0)
+    snapshot = report()
+    previous = _prepared_diagnosed_operation(
+        store,
+        operation_id="operation-recheck",
+        diagnostic_report=snapshot,
+    )
+
+    successor, created = store.begin_recheck(
+        store.token(previous, "recheck"), **_recheck_callback(store, previous)
+    )
+
+    assert created is True
+    assert successor.state == "preparing"
+    assert successor.report is snapshot
+    assert successor.report_fingerprint == snapshot.fingerprint
+    assert successor.recovery_fingerprint == snapshot.recovery_fingerprint
+
+
+def test_begin_recheck_reuses_successor_and_inherits_transport_and_owner():
+    store = OperationStore(secret=b"store", now=lambda: 100.0)
+    transport_secret = b"adapter-process-local-proof"
+    previous = _prepared_diagnosed_operation(
+        store,
+        operation_id="operation-owner",
+        diagnostic_report=report(),
+        group=True,
+        initiator_open_id="ou_owner",
+        transport_secret=transport_secret,
+    )
+    token = store.token(previous, "recheck")
+    callback = _recheck_callback(store, previous)
+
+    successor, created = store.begin_recheck(token, **callback)
+    repeated, repeated_created = store.begin_recheck(token, **callback)
+
+    assert created is True
+    assert repeated_created is False
+    assert repeated is successor
+    assert successor.group is True
+    assert successor.owner_open_id == "ou_owner"
+    transport_fields = {
+        "token": store.token(successor, "details"),
+        "action": "details",
+        "callback_chat_id": "oc_group",
+        "callback_profile_id": "default",
+        "callback_profile_scope": store.scope_fingerprint(successor),
+        "operator_open_id": "ou_reader",
+        "timestamp": 100,
+    }
+    assert store.verify_transport_proof(
+        proof=sign_transport_proof(transport_secret, **transport_fields),
+        **transport_fields,
+    ) is successor
+
+
+def test_begin_recheck_preserves_capacity_and_refuses_late_predecessor_diagnose():
+    store = OperationStore(secret=b"store", now=lambda: 100.0, max_records=2)
+    previous = _prepared_diagnosed_operation(
+        store,
+        operation_id="operation-predecessor",
+        diagnostic_report=report(),
+    )
+    inflight = store.create(group=False, **operation_kwargs())
+    inflight.state = "executing"
+    token = store.token(previous, "recheck")
+    callback = _recheck_callback(store, previous)
+
+    successor, created = store.begin_recheck(token, **callback)
+    repeated, repeated_created = store.begin_recheck(token, **callback)
+
+    assert created is True
+    assert repeated_created is False
+    assert repeated is successor
+    assert set(store._records) == {inflight.operation_id, successor.operation_id}
+    with pytest.raises(OperationRejected, match="operation state changed"):
+        store.diagnose(previous.operation_id, report=report())
+    assert successor.report is previous.report
+
+
 def report(*, executable: bool = True) -> DiagnosticReport:
     return DiagnosticReport(
         status="warning",
@@ -852,6 +981,18 @@ def test_operations_confirmation_buttons_are_primary_and_cancel_is_default():
     ]
     assert len(rows) == 1
     assert len(rows[0]["columns"]) == 2
+
+
+def test_operations_card_shows_preparing_recheck_without_action_buttons():
+    store = OperationStore(secret=b"test", now=lambda: 100.0)
+    operation = store.create(group=False, **operation_kwargs())
+    operation.state = "preparing"
+
+    card = render_operations_card(report(), operation, "footer", store=store)
+
+    summary = card["body"]["elements"][0]["content"]
+    assert "正在重新检测" in summary
+    assert operation_buttons(card) == []
 
 
 def test_operations_card_keeps_a_single_odd_button_in_the_left_column():

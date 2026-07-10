@@ -49,6 +49,7 @@ class OperationRecord:
     expires_at: float
     result: dict[str, object] | None = None
     successor_operation_id: str = ""
+    report: DiagnosticReport | None = None
 
 
 def _next_operation_state(state: str, action: str) -> str:
@@ -148,15 +149,22 @@ class OperationStore:
         self,
         operation_id: str,
         *,
-        report_fingerprint: str,
-        recovery_fingerprint: str,
+        report: DiagnosticReport | None = None,
+        report_fingerprint: str | None = None,
+        recovery_fingerprint: str | None = None,
     ) -> OperationRecord:
+        if report is not None:
+            report_fingerprint = report.fingerprint
+            recovery_fingerprint = report.recovery_fingerprint
+        if report_fingerprint is None or recovery_fingerprint is None:
+            raise ValueError("diagnostic report is required")
         with self._lock:
             record = self._records.get(operation_id)
             if record is None or record.state != "preparing":
                 raise OperationRejected("operation state changed")
             record.report_fingerprint = report_fingerprint
             record.recovery_fingerprint = recovery_fingerprint
+            record.report = report
             record.state = "diagnosed"
             record.expires_at = self._now() + 120.0
             for key, (candidate, _expires_at) in self._idempotency.items():
@@ -238,6 +246,10 @@ class OperationStore:
                 self._remove_locked(operation_id)
             elif item.expires_at < cutoff and item.state not in _INFLIGHT_STATES:
                 self._remove_locked(operation_id)
+        for operation_id, item in list(self._recheck_predecessors.items()):
+            if item.expires_at < cutoff:
+                self._recheck_predecessors.pop(operation_id, None)
+                self._transport_secrets.pop(operation_id, None)
 
     def _reserve_capacity_locked(
         self, protected_operation_ids: frozenset[str] = frozenset()
@@ -262,6 +274,62 @@ class OperationStore:
         return record.state in {"executing", "restarting"} or (
             record.state == "preparing" and record.expires_at > self._now()
         )
+
+    def begin_recheck(
+        self,
+        token: str,
+        *,
+        callback_chat_id: str,
+        callback_profile_id: str,
+        callback_profile_scope: str,
+        callback_report_fingerprint: str,
+        callback_recovery_fingerprint: str,
+    ) -> tuple[OperationRecord, bool]:
+        with self._lock:
+            claims, record = self._verify_token_locked(
+                token, allow_recheck_predecessor=True
+            )
+            self._verify_callback_locked(
+                claims,
+                record,
+                callback_chat_id=callback_chat_id,
+                callback_profile_id=callback_profile_id,
+                callback_profile_scope=callback_profile_scope,
+                callback_report_fingerprint=callback_report_fingerprint,
+                callback_recovery_fingerprint=callback_recovery_fingerprint,
+            )
+            if claims.action != "recheck":
+                raise OperationRejected("operation action mismatch")
+            if record.successor_operation_id:
+                successor = self._records.get(record.successor_operation_id)
+                if successor is not None:
+                    return successor, False
+            _next_operation_state(record.state, "recheck")
+            transport_secret = self._transport_secrets.get(record.operation_id)
+            if transport_secret is None:
+                raise OperationRejected("operation transport binding expired")
+            self._prune_locked()
+            successor = OperationRecord(
+                operation_id=secrets.token_urlsafe(18),
+                chat_id=record.chat_id,
+                profile_id=record.profile_id,
+                report_fingerprint=record.report_fingerprint,
+                recovery_fingerprint=record.recovery_fingerprint,
+                group=record.group,
+                owner_open_id=record.owner_open_id,
+                state="preparing",
+                expires_at=self._now() + 120.0,
+                report=record.report,
+            )
+            record.successor_operation_id = successor.operation_id
+            self._records.pop(record.operation_id, None)
+            self._recheck_predecessors[record.operation_id] = record
+            for key, (candidate, _expires_at) in list(self._idempotency.items()):
+                if candidate == record.operation_id:
+                    self._idempotency.pop(key, None)
+            self._records[successor.operation_id] = successor
+            self._transport_secrets[successor.operation_id] = transport_secret
+            return successor, True
 
     def recheck_successor(
         self,
@@ -685,6 +753,7 @@ def render_operations_card(
 
 def _operations_summary(report: DiagnosticReport, operation: OperationRecord) -> str:
     state_messages = {
+        "preparing": "**正在重新检测**\n\n已锁定本次操作，请稍候。",
         "confirm_repair": "**确认安全修复**\n\n将重新校验当前安装证据，通过后执行安全修复。",
         "executing": "**正在安全修复**\n\n已锁定本次操作，请稍候。",
         "repaired": "**安全修复已完成**",
