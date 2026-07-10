@@ -711,7 +711,10 @@ async def test_ws_hook_to_real_local_actions_enforces_transport_scope_ownership_
         initial_card = feishu_client.sent[0][1]
         repair = _operations_button(initial_card, "安全修复")
         secret = hook_runtime._transport_secret_for_token(repair["token"])
-        assert secret and secret.decode("utf-8") not in str(initial_card)
+        assert secret
+        serialized_card = str(initial_card)
+        assert secret.hex() not in serialized_card
+        assert base64.urlsafe_b64encode(secret).decode("ascii") not in serialized_card
         assert "transport_id" not in str(initial_card)
 
         unsigned = {

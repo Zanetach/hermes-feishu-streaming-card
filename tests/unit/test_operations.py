@@ -472,13 +472,16 @@ def test_transport_proof_binds_token_scope_operator_action_and_timestamp():
     for key, forged in {
         "action": "confirm_repair",
         "callback_chat_id": "oc_other",
-        "callback_profile_id": "sales",
         "operator_open_id": "ou_forged",
         "timestamp": 99,
     }.items():
         changed = {**fields, key: forged}
         with pytest.raises(OperationRejected, match="transport proof"):
             store.verify_transport_proof(proof=proof, **changed)
+
+    # The callback payload is untrusted; profile scope comes from the operation.
+    changed_profile = {**fields, "callback_profile_id": "sales"}
+    assert store.verify_transport_proof(proof=proof, **changed_profile) is operation
 
     clock[0] = 131.0
     with pytest.raises(OperationRejected, match="transport proof expired"):
