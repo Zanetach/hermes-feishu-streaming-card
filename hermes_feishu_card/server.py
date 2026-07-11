@@ -88,6 +88,7 @@ OPERATIONS_MUTATION_EXECUTOR_KEY = web.AppKey("operations_mutation_executor", Th
 OPERATIONS_MUTATION_FUTURES_KEY = web.AppKey("operations_mutation_futures", set)
 OPERATIONS_MUTATIONS_STOPPING_KEY = web.AppKey("operations_mutations_stopping", bool)
 OPERATIONS_PUBLISH_LOCKS_KEY = web.AppKey("operations_publish_locks", dict)
+OPERATIONS_PUBLISH_LOCKS_GUARD_KEY = web.AppKey("operations_publish_locks_guard", asyncio.Lock)
 FLUSH_CONTROLLERS_KEY = web.AppKey("flush_controllers", dict)
 CLEANUP_TASK_KEY = web.AppKey("cleanup_task", asyncio.Task)
 UPDATE_MAX_ATTEMPTS = 3
@@ -196,6 +197,7 @@ def create_app(
     app[OPERATIONS_MUTATION_FUTURES_KEY] = set()
     app[OPERATIONS_MUTATIONS_STOPPING_KEY] = {"stopping": False}
     app[OPERATIONS_PUBLISH_LOCKS_KEY] = {}
+    app[OPERATIONS_PUBLISH_LOCKS_GUARD_KEY] = asyncio.Lock()
     operations_config = Path(
         operations_config_path
         or os.environ.get("HFC_CONFIG")
@@ -247,7 +249,8 @@ async def _stop_runtime_cleanup(app: web.Application) -> None:
 
 async def _stop_operations_diagnostics(app: web.Application) -> None:
     app[OPERATIONS_MUTATIONS_STOPPING_KEY]["stopping"] = True
-    for future in app[OPERATIONS_MUTATION_FUTURES_KEY]:
+    mutation_futures = list(app[OPERATIONS_MUTATION_FUTURES_KEY])
+    for future in mutation_futures:
         future.cancel()
     tasks = list(app[OPERATIONS_DIAGNOSTIC_TASKS_KEY])
     if tasks:
@@ -1153,7 +1156,10 @@ async def _run_operations_mutation(app: web.Application, func: Callable[..., Any
     future: Future[Any] = app[OPERATIONS_MUTATION_EXECUTOR_KEY].submit(func, *args, **kwargs)
     futures: set[Future[Any]] = app[OPERATIONS_MUTATION_FUTURES_KEY]
     futures.add(future)
-    future.add_done_callback(futures.discard)
+    loop = asyncio.get_running_loop()
+    future.add_done_callback(
+        lambda completed: loop.call_soon_threadsafe(futures.discard, completed)
+    )
     return await asyncio.shield(asyncio.wrap_future(future))
 
 
@@ -1440,41 +1446,53 @@ async def _publish_operations_card(
     if not message_id:
         return False
     lock_key = (str(delivery.get("bot_id") or ""), message_id)
-    locks: dict[tuple[str, str], asyncio.Lock] = app[OPERATIONS_PUBLISH_LOCKS_KEY]
-    lock = locks.setdefault(lock_key, asyncio.Lock())
-    async with lock:
-        while True:
-            delivery = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
-            if not isinstance(delivery, dict) or str(delivery.get("message_id") or "") != message_id:
-                return False
-            generation = delivery.get("generation")
+    locks: dict[tuple[str, str], dict[str, Any]] = app[OPERATIONS_PUBLISH_LOCKS_KEY]
+    guard: asyncio.Lock = app[OPERATIONS_PUBLISH_LOCKS_GUARD_KEY]
+    async with guard:
+        entry = locks.get(lock_key)
+        if entry is None:
+            entry = {"lock": asyncio.Lock(), "users": 0}
+            locks[lock_key] = entry
+        entry["users"] += 1
+    try:
+        async with entry["lock"]:
+            while True:
+                delivery = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
+                if not isinstance(delivery, dict) or str(delivery.get("message_id") or "") != message_id:
+                    return False
+                generation = delivery.get("generation")
 
-            def still_current() -> bool:
-                current = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
-                return current is delivery and current.get("generation") == generation
+                def still_current() -> bool:
+                    current = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
+                    return current is delivery and current.get("generation") == generation
 
-            updated = await _update_card_for_app(
-                app, message_id, _render_operations_for_app(app, report, operation),
-                delivery.get("bot_id"), is_current=still_current,
-            )
-            current = app[OPERATIONS_STORE_KEY].current_successor(operation.operation_id)
-            if current is not None and current.operation_id != operation.operation_id:
-                operation = current
-                report = _operation_report_snapshot(current)
-                continue
-            if not still_current():
-                latest = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
-                if (
-                    isinstance(latest, dict)
-                    and str(latest.get("message_id") or "") == message_id
-                ):
+                updated = await _update_card_for_app(
+                    app, message_id, _render_operations_for_app(app, report, operation),
+                    delivery.get("bot_id"), is_current=still_current,
+                )
+                current = app[OPERATIONS_STORE_KEY].current_successor(operation.operation_id)
+                if current is not None and current.operation_id != operation.operation_id:
+                    operation = current
+                    report = _operation_report_snapshot(current)
                     continue
-                return False
-            if not updated:
-                result = dict(operation.result or {})
-                result["delivery_error"] = "card update unavailable"
-                operation.result = result
-            return updated
+                if not still_current():
+                    latest = app[OPERATIONS_DELIVERIES_KEY].get(operation.operation_id)
+                    if (
+                        isinstance(latest, dict)
+                        and str(latest.get("message_id") or "") == message_id
+                    ):
+                        continue
+                    return False
+                if not updated:
+                    result = dict(operation.result or {})
+                    result["delivery_error"] = "card update unavailable"
+                    operation.result = result
+                return updated
+    finally:
+        async with guard:
+            entry["users"] -= 1
+            if entry["users"] == 0 and locks.get(lock_key) is entry:
+                locks.pop(lock_key, None)
 
 
 def _restart_output_status(output: str) -> str:

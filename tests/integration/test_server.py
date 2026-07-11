@@ -1928,6 +1928,39 @@ async def test_stale_operations_publisher_republishes_the_current_delivery_owner
     assert set(app[sidecar_server.OPERATIONS_DELIVERIES_KEY]) == {
         current_operation.operation_id
     }
+    assert app[sidecar_server.OPERATIONS_PUBLISH_LOCKS_KEY] == {}
+
+
+async def test_mutation_cleanup_snapshots_three_futures_and_waits_for_running_workers():
+    app = create_app(FakeFeishuClient())
+    started = threading.Event()
+    release = threading.Event()
+    running = [0]
+
+    def blocked_mutation():
+        running[0] += 1
+        if running[0] == 2:
+            started.set()
+        release.wait(2.0)
+
+    tasks = [
+        asyncio.create_task(sidecar_server._run_operations_mutation(app, blocked_mutation))
+        for _ in range(3)
+    ]
+    for task in tasks:
+        sidecar_server._track_operations_task(app, task)
+    await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1.0)
+    cleanup = asyncio.create_task(sidecar_server._stop_operations_diagnostics(app))
+    await asyncio.sleep(0.02)
+    assert cleanup.done() is False
+    release.set()
+    await cleanup
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    assert running[0] == 2
+    assert app[sidecar_server.OPERATIONS_MUTATION_FUTURES_KEY] == set()
+    with pytest.raises(RuntimeError):
+        app[sidecar_server.OPERATIONS_MUTATION_EXECUTOR_KEY].submit(lambda: None)
 
 
 @pytest.mark.parametrize("state", ("preparing", "executing", "restarting"))

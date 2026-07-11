@@ -24,6 +24,13 @@ from hermes_feishu_card.operations_transport import ensure_transport_root_secret
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "hermes_v2026_4_23"
 
 
+@pytest.fixture(autouse=True)
+def reset_hook_runtime_state():
+    hook_runtime.reset_runtime_state()
+    yield
+    hook_runtime.reset_runtime_state()
+
+
 def _operation_token(operation_id="operation-1"):
     payload = json.dumps(
         {
@@ -887,6 +894,7 @@ async def test_ws_hook_to_real_local_actions_enforces_transport_scope_ownership_
                 for _ in range(2)
             ]
         )
+        await _wait_for(lambda: len(recovery_calls) == 1)
         assert len(recovery_calls) == 1
         assert all(
             item.card is not None and "正在安全修复" in str(item.card.data)
