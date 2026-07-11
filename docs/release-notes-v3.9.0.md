@@ -10,6 +10,7 @@ V3.9.0 establishes an operations and reliability foundation for the sidecar-only
 - Ownership is explicit: private operations do not compare operators, while group repair/restart confirmation remains with the initiating operator. The stateful command transport uses a zero-configuration secret in the private sidecar state-directory transport root, rather than configuration or environment variables.
 - Profile-aware setup resolves `--profile-id` / `--event-url` before process environment, then the selected env file, then defaults. Only `doctor` shows the complete redacted identity/profile/event-endpoint route chain; `status` summarizes runtime routing and profile events, while `/health` reports actual routing health fields.
 - Known-safe install evidence may be automatically repaired during install/setup; `--no-repair` opts out. Unverifiable user edits remain refused. Lifecycle cleanup keeps runtime state and cleanup history bounded.
+- Operations-card WebSocket clicks ACK Feishu immediately and enter a bounded background dispatcher with retry. The sidecar PATCHes every authenticated transition to the original card without making recheck/repair/restart wait for the Feishu update call.
 - Hermes compatibility and existing-container Docker install paths remain supported by automated coverage. Existing-container Docker smoke is still pending acceptance.
 
 ## Contribution
@@ -18,8 +19,8 @@ PR #84 by @Zanetach contributed card progress-status routing and `.env` allowlis
 
 ## Validation
 
-- Automated release gate: `1164 passed, 3 skipped`.
-- Real Feishu private-chat acceptance passed on 2026-07-11: `/hfc doctor` without a gray native unknown-command reply, localized details, two consecutive rechecks including the background successor, same-card updates, sandboxed two-step safe repair, card-triggered Gateway restart, and the normal streaming-card footer.
+- Automated release gate: `1171 passed, 3 skipped`.
+- Real Feishu private-chat acceptance passed on 2026-07-11: `/hfc doctor` without a gray native unknown-command reply; localized details and two consecutive rechecks, including the background successor, ACKed in 156–201 ms without a callback-timeout toast and PATCHed the same card; sandboxed two-step safe repair, card-triggered Gateway restart, and the normal streaming-card footer also passed.
 - Pending real Feishu acceptance: group initiator repair/restart, changed-operator rejection, topic, cron, and profile route mismatch. These are not claimed as verified here.
 - Pending existing-container Docker smoke: fresh install, pinned upgrade, known-safe corrupt-marker auto-repair, refusal of user edits, main/child profile endpoint mapping, and final `doctor`.
 

@@ -516,9 +516,7 @@ async def _operations_action(
             report,
             transitioned,
             after_eof=(
-                lambda: _schedule_operations_recheck(
-                    request.app, transitioned
-                )
+                lambda: _schedule_operations_recheck(request.app, transitioned)
                 if created
                 else None
             ),
@@ -781,6 +779,9 @@ def _schedule_operations_diagnosis(
 
 
 def _track_operations_task(app: web.Application, task: asyncio.Task[None]) -> None:
+    if app[OPERATIONS_MUTATIONS_STOPPING_KEY]["stopping"]:
+        task.cancel()
+        return
     tasks = app[OPERATIONS_DIAGNOSTIC_TASKS_KEY]
     tasks.add(task)
     task.add_done_callback(tasks.discard)
@@ -1113,9 +1114,12 @@ def _operations_response(
         },
         "card": _render_operations_for_app(app, report, operation),
     }
-    if after_eof is not None:
-        return _AfterEofJsonResponse(data, after_eof)
-    return web.json_response(data)
+    return _AfterEofJsonResponse(
+        data,
+        lambda: _schedule_operations_transition(
+            app, report, operation, after_eof
+        ),
+    )
 
 
 def _operation_report_snapshot(operation: OperationRecord) -> DiagnosticReport:
@@ -1143,6 +1147,30 @@ def _schedule_operations_recheck(
     _track_operations_task(
         app, asyncio.create_task(_run_operations_recheck(app, operation))
     )
+
+
+def _schedule_operations_transition(
+    app: web.Application,
+    report: DiagnosticReport,
+    operation: OperationRecord,
+    follow_up: Callable[[], None] | None = None,
+) -> None:
+    if app[OPERATIONS_MUTATIONS_STOPPING_KEY]["stopping"]:
+        return
+    _track_operations_task(
+        app,
+        asyncio.create_task(_publish_operations_transition(app, report, operation)),
+    )
+    if follow_up is not None:
+        follow_up()
+
+
+async def _publish_operations_transition(
+    app: web.Application,
+    report: DiagnosticReport,
+    operation: OperationRecord,
+) -> None:
+    await _publish_operations_card(app, report, operation)
 
 
 def _schedule_operations_repair(

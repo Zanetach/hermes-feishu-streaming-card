@@ -4546,9 +4546,11 @@ def test_operations_select_passes_admission_and_forwards_profile_context(monkeyp
         lambda: SimpleNamespace(event_url="http://127.0.0.1:8765/events"),
     )
     posted = {}
+    posted_event = threading.Event()
 
     def fake_post(url, payload, timeout):
         posted.update(url=url, payload=payload, timeout=timeout)
+        posted_event.set()
         return {
             "ok": True,
             "operation_id": "operation-successor",
@@ -4583,6 +4585,7 @@ def test_operations_select_passes_admission_and_forwards_profile_context(monkeyp
 
     response = hook_runtime._hfc_on_feishu_card_action_trigger(adapter, data)
 
+    assert posted_event.wait(1.0)
     assert adapter.allowed == [("ou_owner", "oc_group", False)]
     assert posted["url"] == "http://127.0.0.1:8765/card/actions"
     assert posted["payload"]["event"]["context"] == {
@@ -4598,14 +4601,243 @@ def test_operations_select_passes_admission_and_forwards_profile_context(monkeyp
     }
     assert posted["payload"]["adapter_transport_proof"]["signature"]
     assert posted["payload"]["adapter_transport_proof"]["timestamp"] > 0
-    assert posted["timeout"] == 2.0
     assert posted["timeout"] == hook_runtime.OPERATIONS_ACTION_TIMEOUT_SECONDS
-    assert response.card.type == "raw"
-    assert "正在重新检测" in str(response.card.data)
+    assert posted["timeout"] >= 10.0
+    assert response.card is None
     assert hook_runtime._operation_transport_context("operation-successor") == (
         b"process-local-secret",
         "work",
     )
+
+
+def test_operations_select_acks_before_daemon_forward_and_remembers_successor_transport(
+    monkeypatch,
+):
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def _allow_group_message(self, sender_id, chat_id, is_bot=False):
+            return True
+
+    class CapturedDispatcher:
+        def __init__(self):
+            self.tasks = []
+
+        def submit(self, task):
+            self.tasks.append(task)
+            return True
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    dispatcher = CapturedDispatcher()
+    monkeypatch.setattr(
+        hook_runtime, "_OPERATIONS_ACTION_DISPATCHER", dispatcher
+    )
+    monkeypatch.setattr(
+        hook_runtime,
+        "load_runtime_config",
+        lambda: SimpleNamespace(event_url="http://127.0.0.1:8765/events"),
+    )
+    posted = []
+
+    def fake_post(url, payload, timeout):
+        posted.append((url, payload, timeout))
+        if len(posted) == 1:
+            raise TimeoutError("slow sidecar")
+        return {"ok": True, "operation_id": "operation-successor"}
+
+    monkeypatch.setattr(hook_runtime, "_post_json_sync_response", fake_post)
+    token = _operation_token()
+    hook_runtime._remember_operation_transport(
+        "operation-1", "process-local-secret", "work"
+    )
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "operations.select",
+                    "operation_action": "repair",
+                    "token": token,
+                    "profile_scope": "opaque-scope",
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_group"),
+            operator=SimpleNamespace(open_id="ou_owner"),
+        )
+    )
+
+    response = hook_runtime._hfc_on_feishu_card_action_trigger(
+        DummyFeishuAdapter(), data
+    )
+
+    assert response.card is None
+    assert posted == []
+    assert len(dispatcher.tasks) == 1
+
+    dispatcher.tasks[0]()
+
+    assert len(posted) == 2
+    assert posted[-1][0] == "http://127.0.0.1:8765/card/actions"
+    assert posted[-1][2] == hook_runtime.OPERATIONS_ACTION_TIMEOUT_SECONDS
+    assert posted[-1][2] >= 10.0
+    assert hook_runtime._operation_transport_context("operation-successor") == (
+        b"process-local-secret",
+        "work",
+    )
+
+
+def test_operations_select_slow_forward_does_not_delay_callback(monkeypatch):
+    class FakeP2Response:
+        def __init__(self):
+            self.card = None
+            self.toast = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def _allow_group_message(self, sender_id, chat_id, is_bot=False):
+            return True
+
+    release = threading.Event()
+    completed = threading.Event()
+
+    def slow_post(*_args):
+        release.wait(1.0)
+        completed.set()
+        return {"ok": True}
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    monkeypatch.setattr(
+        hook_runtime,
+        "load_runtime_config",
+        lambda: SimpleNamespace(event_url="http://127.0.0.1:8765/events"),
+    )
+    monkeypatch.setattr(hook_runtime, "_post_json_sync_response", slow_post)
+    token = _operation_token()
+    hook_runtime._remember_operation_transport(
+        "operation-1", "process-local-secret", "work"
+    )
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "operations.select",
+                    "operation_action": "repair",
+                    "token": token,
+                    "profile_scope": "opaque-scope",
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_group"),
+            operator=SimpleNamespace(open_id="ou_owner"),
+        )
+    )
+
+    started = time.monotonic()
+    response = hook_runtime._hfc_on_feishu_card_action_trigger(
+        DummyFeishuAdapter(), data
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.1
+    assert response.card is None
+    release.set()
+    assert completed.wait(1.0)
+
+
+def test_operations_select_full_dispatcher_returns_retry_toast(monkeypatch):
+    class FakeToast:
+        def __init__(self):
+            self.type = None
+            self.content = None
+
+    class FakeP2Response:
+        _types = {"toast": FakeToast}
+
+        def __init__(self):
+            self.card = None
+            self.toast = None
+
+    class DummyFeishuAdapter:
+        name = "feishu"
+
+        def _allow_group_message(self, sender_id, chat_id, is_bot=False):
+            return True
+
+    class FullDispatcher:
+        def submit(self, _task):
+            return False
+
+    DummyFeishuAdapter.__module__ = hook_runtime.__name__
+    monkeypatch.setattr(
+        hook_runtime, "P2CardActionTriggerResponse", FakeP2Response, raising=False
+    )
+    monkeypatch.setattr(
+        hook_runtime, "_OPERATIONS_ACTION_DISPATCHER", FullDispatcher()
+    )
+    monkeypatch.setattr(
+        hook_runtime,
+        "load_runtime_config",
+        lambda: SimpleNamespace(event_url="http://127.0.0.1:8765/events"),
+    )
+    token = _operation_token()
+    hook_runtime._remember_operation_transport(
+        "operation-1", "process-local-secret", "work"
+    )
+    data = SimpleNamespace(
+        event=SimpleNamespace(
+            action=SimpleNamespace(
+                value={
+                    "hfc_action": "operations.select",
+                    "operation_action": "repair",
+                    "token": token,
+                    "profile_scope": "opaque-scope",
+                }
+            ),
+            context=SimpleNamespace(open_chat_id="oc_group"),
+            operator=SimpleNamespace(open_id="ou_owner"),
+        )
+    )
+
+    response = hook_runtime._hfc_on_feishu_card_action_trigger(
+        DummyFeishuAdapter(), data
+    )
+
+    assert response.card is None
+    assert response.toast.type == "warning"
+    assert "稍后重试" in response.toast.content
+
+
+def test_operations_action_dispatcher_queues_beyond_active_workers_and_bounds_pending():
+    dispatcher = hook_runtime._OperationsActionDispatcher(
+        workers=1, max_pending=1
+    )
+    started = threading.Event()
+    release = threading.Event()
+    completed = []
+
+    def blocked_task():
+        started.set()
+        release.wait(1.0)
+        completed.append("blocked")
+
+    assert dispatcher.submit(blocked_task) is True
+    assert started.wait(1.0)
+    assert dispatcher.submit(lambda: completed.append("queued")) is True
+    assert dispatcher.submit(lambda: completed.append("overflow")) is False
+
+    release.set()
+    dispatcher.wait()
+
+    assert completed == ["blocked", "queued"]
 
 
 def test_operations_select_rejected_admission_is_claimed_without_forward(monkeypatch):

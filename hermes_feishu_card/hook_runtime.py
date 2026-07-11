@@ -11,13 +11,14 @@ import logging
 import math
 import os
 from pathlib import Path
+import queue
 import re
 import secrets
 import sys
 from types import SimpleNamespace
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 from urllib import parse
 from urllib import request
 
@@ -34,7 +35,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_EVENT_URL = "http://127.0.0.1:8765/events"
 DEFAULT_TIMEOUT_SECONDS = 0.8
 TERMINAL_TIMEOUT_SECONDS = 10.0
-OPERATIONS_ACTION_TIMEOUT_SECONDS = 2.0
+OPERATIONS_ACTION_TIMEOUT_SECONDS = 10.0
+OPERATIONS_ACTION_FORWARD_ATTEMPTS = 2
+OPERATIONS_ACTION_RETRY_DELAY_SECONDS = 0.1
+OPERATIONS_ACTION_WORKERS = 4
+OPERATIONS_ACTION_QUEUE_LIMIT = 64
 PROFILE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 MEDIA_RE = re.compile(r"MEDIA:([^\s\]]+)")
 LOCAL_FILE_RE = re.compile(
@@ -119,6 +124,60 @@ _OPERATION_TRANSPORT_SECRETS: dict[str, tuple[bytes, str, float]] = {}
 _OPERATION_TRANSPORT_SECRETS_LOCK = threading.Lock()
 _OPERATION_TRANSPORT_SECRET_TTL_SECONDS = 600.0
 _OPERATION_TRANSPORT_SECRET_LIMIT = 256
+
+
+class _OperationsActionDispatcher:
+    def __init__(self, *, workers: int, max_pending: int):
+        self._workers = workers
+        self._queue: queue.Queue[Callable[[], None]] = queue.Queue(
+            maxsize=max_pending
+        )
+        self._start_lock = threading.Lock()
+        self._started = False
+
+    def submit(self, task: Callable[[], None]) -> bool:
+        self._ensure_started()
+        try:
+            self._queue.put_nowait(task)
+        except queue.Full:
+            return False
+        return True
+
+    def wait(self) -> None:
+        self._queue.join()
+
+    def _ensure_started(self) -> None:
+        if self._started:
+            return
+        with self._start_lock:
+            if self._started:
+                return
+            for index in range(self._workers):
+                threading.Thread(
+                    target=self._run,
+                    name=f"hfc-operations-action-{index + 1}",
+                    daemon=True,
+                ).start()
+            self._started = True
+
+    def _run(self) -> None:
+        while True:
+            task = self._queue.get()
+            try:
+                task()
+            except Exception as exc:
+                _hfc_warn(
+                    "operations.select background worker failed: "
+                    f"{exc.__class__.__name__}"
+                )
+            finally:
+                self._queue.task_done()
+
+
+_OPERATIONS_ACTION_DISPATCHER = _OperationsActionDispatcher(
+    workers=OPERATIONS_ACTION_WORKERS,
+    max_pending=OPERATIONS_ACTION_QUEUE_LIMIT,
+)
 
 
 def reset_runtime_state() -> None:
@@ -1262,6 +1321,28 @@ def _hfc_empty_feishu_callback_response(adapter: Any) -> Any:
     return response_type() if response_type is not None else None
 
 
+def _hfc_toast_feishu_callback_response(
+    adapter: Any, content: str, *, toast_type: str = "warning"
+) -> Any:
+    response_type, _ = _hfc_feishu_response_types(adapter)
+    if response_type is None:
+        return None
+    response = response_type()
+    module = sys.modules.get(type(adapter).__module__)
+    callback_toast_type = getattr(module, "CallBackToast", None) if module else None
+    if callback_toast_type is None:
+        response_types = getattr(response_type, "_types", {})
+        if isinstance(response_types, dict):
+            callback_toast_type = response_types.get("toast")
+    if callback_toast_type is None:
+        return response
+    toast = callback_toast_type()
+    toast.type = toast_type
+    toast.content = content
+    response.toast = toast
+    return response
+
+
 def _hfc_raw_feishu_callback_response(adapter: Any, card_data: dict[str, Any]) -> Any:
     response_type, card_type = _hfc_feishu_response_types(adapter)
     if response_type is None:
@@ -2380,26 +2461,59 @@ def _hfc_handle_operations_select_action(
     try:
         config = load_runtime_config()
         url = f"{_summary_base_url(config.event_url)}/card/actions"
-        result = _post_json_sync_response(
-            url,
-            sidecar_payload,
-            OPERATIONS_ACTION_TIMEOUT_SECONDS,
-        )
     except Exception as exc:
         _hfc_warn(
-            f"operations.select forward failed: {exc.__class__.__name__}: {exc}"
+            "operations.select background forward setup failed: "
+            f"{exc.__class__.__name__}"
         )
-        return _hfc_empty_feishu_callback_response(adapter)
-    if isinstance(result, dict) and isinstance(result.get("card"), dict):
-        successor_id = str(result.get("operation_id") or "").strip()
-        if successor_id:
-            _remember_operation_transport(
-                successor_id,
-                transport_secret,
-                profile_id,
-                transport_lineage_id or operation_id,
+        return _hfc_toast_feishu_callback_response(
+            adapter, "操作暂不可用，请稍后重试"
+        )
+
+    def forward() -> None:
+        last_error: Exception | None = None
+        for attempt in range(OPERATIONS_ACTION_FORWARD_ATTEMPTS):
+            try:
+                result = _post_json_sync_response(
+                    url,
+                    sidecar_payload,
+                    OPERATIONS_ACTION_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 < OPERATIONS_ACTION_FORWARD_ATTEMPTS:
+                    time.sleep(OPERATIONS_ACTION_RETRY_DELAY_SECONDS)
+                    continue
+                break
+            if isinstance(result, dict):
+                successor_id = str(result.get("operation_id") or "").strip()
+                if successor_id:
+                    _remember_operation_transport(
+                        successor_id,
+                        transport_secret,
+                        profile_id,
+                        transport_lineage_id or operation_id,
+                    )
+            return
+        if last_error is not None:
+            _hfc_warn(
+                "operations.select background forward failed: "
+                f"{last_error.__class__.__name__}"
             )
-        return _hfc_raw_feishu_callback_response(adapter, result["card"])
+
+    try:
+        accepted = _OPERATIONS_ACTION_DISPATCHER.submit(forward)
+    except Exception as exc:
+        _hfc_warn(
+            "operations.select background dispatch failed: "
+            f"{exc.__class__.__name__}"
+        )
+        accepted = False
+    if not accepted:
+        _hfc_warn("operations.select background dispatch unavailable: capacity")
+        return _hfc_toast_feishu_callback_response(
+            adapter, "操作繁忙，请稍后重试"
+        )
     return _hfc_empty_feishu_callback_response(adapter)
 
 

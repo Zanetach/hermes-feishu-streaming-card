@@ -25,6 +25,7 @@
 - `/hfc doctor` 只生成一张运维卡，没有灰色原生未知命令。
 - 中文诊断摘要与详情可见，footer 保持不变。
 - 连续两次重新检测均快速返回，后台 successor 按钮仍可点击，最终 PATCH 同一张卡片。
+- 本轮回调可靠性复测中，“查看诊断”和连续两次“重新检测”均在 156–201 ms 内 ACK；没有新增“目标回调服务超时未响应”，过渡态与终态继续 PATCH 原卡。
 - 临时 Hermes sandbox 中两步安全修复成功；卡片实际重启 Gateway，先显示进行态，随后同卡显示完成态。
 - 普通流式卡从生成中到完成态保持一张卡，完成 footer/layout 不变，没有灰色重复答案。
 - 本轮 sidecar 发送与更新均成功，Gateway 日志没有新的 operations forward timeout。

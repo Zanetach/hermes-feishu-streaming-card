@@ -16,12 +16,16 @@ See also: [docs/release-notes-v3.9.0.md](docs/release-notes-v3.9.0.md)
 - Operations cards preserve ownership boundaries: private chats do not compare operators; group cards require the initiating operator for repair/restart confirmation. Transport authentication uses a zero-configuration secret rooted in the private sidecar state directory.
 - Added profile-aware setup, environment diagnostics, lifecycle cleanup metrics, automatic known-safe repair (with `--no-repair` opt-out), and Hermes/Docker compatibility coverage. `doctor` shows the full redacted identity/profile/event-endpoint route chain; `status` summarizes runtime routing/profile events and `/health` reports routing health.
 
+### Fixed
+- Operations-card WebSocket clicks now ACK Feishu immediately, then use a bounded background dispatcher with retry to forward authenticated actions to the sidecar. Slow local callbacks no longer surface Feishu's target-callback timeout toast.
+- Every authenticated operations response now PATCHes the original card through the sidecar delivery mapping. Transition-card publishing is independent from recheck/repair/restart execution, so a slow or failed Feishu PATCH cannot prevent an accepted operation from starting.
+
 ### Credits
 - PR #84 by @Zanetach contributed card progress-status routing and `.env` allowlist expansion for profile environment support.
 
 ### Validation
-- Automated release gate: `1164 passed, 3 skipped`.
-- Real Feishu private-chat acceptance passed on 2026-07-11: `/hfc doctor` produced one operations card without a gray native unknown-command reply; details, two consecutive rechecks (including a background successor), same-card updates, sandboxed two-step safe repair, card-triggered Gateway restart, and the normal streaming-card footer all passed with zero send/update failures.
+- Automated release gate: `1171 passed, 3 skipped`.
+- Real Feishu private-chat acceptance passed on 2026-07-11: `/hfc doctor` produced one operations card without a gray native unknown-command reply; details and two consecutive rechecks (including a background successor) ACKed in 156–201 ms without a callback-timeout toast and PATCHed the same card; sandboxed two-step safe repair, card-triggered Gateway restart, and the normal streaming-card footer also passed with zero send/update failures.
 - Existing-container Docker smoke plus group ownership, topic, cron, and profile-mismatch smoke remain pending acceptance.
 
 ## V3.8.18 — 2026-07-10

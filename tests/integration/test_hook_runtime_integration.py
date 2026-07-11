@@ -379,6 +379,25 @@ async def _click_operations(adapter, value, *, chat_id, operator):
     )
 
 
+async def _wait_for_operations_dispatch():
+    await asyncio.wait_for(
+        asyncio.to_thread(hook_runtime._OPERATIONS_ACTION_DISPATCHER.wait),
+        timeout=2.0,
+    )
+
+
+async def _click_operations_and_wait_for_card(
+    adapter, value, *, chat_id, operator, feishu_client
+):
+    update_count = len(feishu_client.updated)
+    response = await _click_operations(
+        adapter, value, chat_id=chat_id, operator=operator
+    )
+    await _wait_for_operations_dispatch()
+    await _wait_for(lambda: len(feishu_client.updated) > update_count)
+    return response, feishu_client.updated[-1][1]
+
+
 async def test_installed_ws_hook_uses_real_http_for_operator_and_auth_matrix(
     monkeypatch,
     tmp_path,
@@ -440,20 +459,40 @@ async def test_installed_ws_hook_uses_real_http_for_operator_and_auth_matrix(
             adapter, repair, chat_id="oc_group", operator="ou_owner"
         )
         assert rejected_auth.card is None
+        await _wait_for_operations_dispatch()
         hook_runtime._remember_operation_transport(operation_id, authentic_secret)
 
-        owner_response = await _click_operations(
-            adapter, repair, chat_id="oc_group", operator="ou_owner"
+        owner_response, owner_card = await _click_operations_and_wait_for_card(
+            adapter,
+            repair,
+            chat_id="oc_group",
+            operator="ou_owner",
+            feishu_client=feishu_client,
         )
-        confirm = _operations_button(owner_response.card.data, "确认修复")
-        other_response = await _click_operations(
-            adapter, confirm, chat_id="oc_group", operator="ou_other"
+        assert owner_response.card is None
+        confirm = _operations_button(owner_card, "确认修复")
+        other_response, other_card = await _click_operations_and_wait_for_card(
+            adapter,
+            confirm,
+            chat_id="oc_group",
+            operator="ou_other",
+            feishu_client=feishu_client,
         )
-        assert _operations_button(other_response.card.data, "确认修复")
-        completed_group = await _click_operations(
-            adapter, confirm, chat_id="oc_group", operator="ou_owner"
+        assert other_response.card is None
+        assert _operations_button(other_card, "确认修复")
+        group_update_start = len(feishu_client.updated)
+        completed_group, _executing_group_card = await _click_operations_and_wait_for_card(
+            adapter,
+            confirm,
+            chat_id="oc_group",
+            operator="ou_owner",
+            feishu_client=feishu_client,
         )
-        assert "正在安全修复" in str(completed_group.card.data)
+        assert completed_group.card is None
+        assert any(
+            "正在安全修复" in str(card)
+            for _message_id, card in feishu_client.updated[group_update_start:]
+        )
         await _wait_for(
             lambda: any(
                 "安全修复已完成" in str(card)
@@ -469,16 +508,28 @@ async def test_installed_ws_hook_uses_real_http_for_operator_and_auth_matrix(
             index=2,
         )
         private_repair = _operations_button(private_card, "安全修复")
-        private_confirm_card = await _click_operations(
-            adapter, private_repair, chat_id="oc_private", operator="ou_first"
+        private_response, private_confirm_card = await _click_operations_and_wait_for_card(
+            adapter,
+            private_repair,
+            chat_id="oc_private",
+            operator="ou_first",
+            feishu_client=feishu_client,
         )
-        private_confirm = _operations_button(
-            private_confirm_card.card.data, "确认修复"
+        assert private_response.card is None
+        private_confirm = _operations_button(private_confirm_card, "确认修复")
+        private_update_start = len(feishu_client.updated)
+        completed_private, _executing_private_card = await _click_operations_and_wait_for_card(
+            adapter,
+            private_confirm,
+            chat_id="oc_private",
+            operator="ou_second",
+            feishu_client=feishu_client,
         )
-        completed_private = await _click_operations(
-            adapter, private_confirm, chat_id="oc_private", operator="ou_second"
+        assert completed_private.card is None
+        assert any(
+            "正在安全修复" in str(card)
+            for _message_id, card in feishu_client.updated[private_update_start:]
         )
-        assert "正在安全修复" in str(completed_private.card.data)
         await _wait_for(
             lambda: sum(
                 "安全修复已完成" in str(card)
@@ -549,6 +600,7 @@ async def test_ws_operations_recheck_returns_in_progress_card_and_keeps_successo
         response = await _click_operations(
             adapter, recheck, chat_id="oc_private", operator="ou_owner"
         )
+        await _wait_for_operations_dispatch()
         successor_id = next(
             operation_id
             for operation_id, operation in app[
@@ -558,19 +610,29 @@ async def test_ws_operations_recheck_returns_in_progress_card_and_keeps_successo
         )
         await asyncio.wait_for(asyncio.to_thread(recheck_started.wait), timeout=1.0)
         release_recheck.set()
-        await _wait_for(lambda: bool(feishu_client.updated))
+        await _wait_for(
+            lambda: any(
+                "诊断摘要" in str(card)
+                for _message_id, card in feishu_client.updated
+            )
+        )
         patched_recheck = _operations_button(feishu_client.updated[-1][1], "重新检测")
+        patched_update_start = len(feishu_client.updated)
         patched_response = await _click_operations(
             adapter, patched_recheck, chat_id="oc_private", operator="ou_owner"
         )
+        await _wait_for_operations_dispatch()
+        await _wait_for(lambda: len(feishu_client.updated) > patched_update_start)
     finally:
         release_recheck.set()
         await client.close()
 
-    assert response.card.type == "raw"
-    assert "正在重新检测" in str(response.card.data)
-    assert patched_response.card.type == "raw"
-    assert "正在重新检测" in str(patched_response.card.data)
+    assert response.card is None
+    assert patched_response.card is None
+    assert any(
+        "正在重新检测" in str(card)
+        for _message_id, card in feishu_client.updated[patched_update_start:]
+    )
     assert hook_runtime._operation_transport_context(successor_id) == (
         original_secret,
         "default",
@@ -623,11 +685,12 @@ def test_installed_ws_operations_actions_all_require_admission(
             }
         )
     )
+    hook_runtime._OPERATIONS_ACTION_DISPATCHER.wait()
 
     assert adapter.allowed == [("ou_operator", "oc_group", False)]
     assert adapter.native_actions == []
     assert posted[0][1]["event"]["action"]["value"]["operation_action"] == operation_action
-    assert response.card.type == "raw"
+    assert response.card is None
 
 
 @pytest.mark.parametrize(
@@ -879,18 +942,28 @@ async def test_ws_hook_to_real_local_actions_enforces_transport_scope_ownership_
             _card_action_data(repair, open_id="ou_owner", chat_id="oc_other"),
         )
         assert wrong_scope.card is None
+        await _wait_for_operations_dispatch()
 
-        wrong_owner = await asyncio.to_thread(
-            adapter._on_card_action_trigger,
-            _card_action_data(repair, open_id="ou_other"),
+        wrong_owner, wrong_owner_card = await _click_operations_and_wait_for_card(
+            adapter,
+            repair,
+            chat_id="oc_group",
+            operator="ou_other",
+            feishu_client=feishu_client,
         )
-        assert "安全修复" in str(wrong_owner.card.data)
+        assert wrong_owner.card is None
+        assert "安全修复" in str(wrong_owner_card)
 
-        first = await asyncio.to_thread(
-            adapter._on_card_action_trigger,
-            _card_action_data(repair, open_id="ou_owner"),
+        first, confirmation_card = await _click_operations_and_wait_for_card(
+            adapter,
+            repair,
+            chat_id="oc_group",
+            operator="ou_owner",
+            feishu_client=feishu_client,
         )
-        confirm = _operations_button(first.card.data, "确认修复")
+        assert first.card is None
+        confirm = _operations_button(confirmation_card, "确认修复")
+        duplicate_update_start = len(feishu_client.updated)
         duplicate_results = await asyncio.gather(
             *[
                 asyncio.to_thread(
@@ -900,11 +973,17 @@ async def test_ws_hook_to_real_local_actions_enforces_transport_scope_ownership_
                 for _ in range(2)
             ]
         )
+        await _wait_for_operations_dispatch()
         await _wait_for(lambda: len(recovery_calls) == 1)
         assert len(recovery_calls) == 1
-        assert all(
-            item.card is not None and "正在安全修复" in str(item.card.data)
-            for item in duplicate_results
+        assert all(item.card is None for item in duplicate_results)
+        await _wait_for(
+            lambda: any(
+                "正在安全修复" in str(card)
+                for _message_id, card in feishu_client.updated[
+                    duplicate_update_start:
+                ]
+            )
         )
         await _wait_for(
             lambda: any(
@@ -933,11 +1012,15 @@ async def test_ws_hook_to_real_local_actions_enforces_transport_scope_ownership_
             allow_expired=True,
         )
         record.expires_at = 0.0
-        expired = await asyncio.to_thread(
-            adapter._on_card_action_trigger,
-            _card_action_data(details, open_id="ou_owner"),
+        expired, expired_card = await _click_operations_and_wait_for_card(
+            adapter,
+            details,
+            chat_id="oc_group",
+            operator="ou_owner",
+            feishu_client=feishu_client,
         )
-        assert "诊断已过期" in str(expired.card.data)
-        assert _operations_button(expired.card.data, "重新检测")
+        assert expired.card is None
+        assert "诊断已过期" in str(expired_card)
+        assert _operations_button(expired_card, "重新检测")
     finally:
         await client.close()
