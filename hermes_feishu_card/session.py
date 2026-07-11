@@ -254,14 +254,28 @@ class CardSession:
             return final
 
         if self._answer_archive_index is not None:
+            stripped = _strip_preface_prefix(final, preface)
+            # Guard: if final merely extends preface by a tiny suffix (e.g.
+            # trailing punctuation), the preface IS the answer — don't
+            # archive it into reasoning.  (#96)
+            if final.startswith(preface) and (
+                stripped == final or len(stripped) <= max(20, len(final) // 5)
+            ):
+                self._answer_archive_index = None
+                return final
             self._archive_current_answer_to_reasoning()
-            return _strip_preface_prefix(final, preface)
+            return stripped
 
         if self._has_seen_tool_event and final.startswith(preface):
             stripped = _strip_preface_prefix(final, preface)
-            if stripped != final:
+            # Only archive the preface when the remaining stripped content is
+            # substantial — i.e. the preface was a short intro and the real
+            # answer follows.  If stripped is tiny relative to final, the
+            # "preface" IS the answer and should not be archived.  (#96)
+            if stripped != final and len(stripped) > max(20, len(final) // 5):
                 self._archive_current_answer_to_reasoning()
                 return stripped
+            return final
 
         if self._has_seen_tool_event:
             self._archive_current_answer_to_reasoning()
