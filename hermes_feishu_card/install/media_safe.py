@@ -38,12 +38,13 @@ def apply_media_safe_patch(hermes_dir: str | Path) -> MediaSafePatchResult:
     original = adapter_path.read_text(encoding="utf-8")
     patched = patch_adapter_source(original)
     if patched == original:
+        applied = _has_marker_patch(patched) or _has_compatible_media_delivery(patched)
+        status = "already ok" if applied else "skipped; no supported send anchor found"
         return MediaSafePatchResult(
             adapter_path=adapter_path,
             changed=False,
-            applied=MEDIA_SAFE_EXTRACT_BEGIN in patched
-            and MEDIA_SAFE_DELIVERY_BEGIN in patched,
-            message=f"media-safe: already ok {adapter_path}",
+            applied=applied,
+            message=f"media-safe: {status} {adapter_path}",
         )
 
     adapter_path.write_text(patched, encoding="utf-8")
@@ -58,6 +59,21 @@ def apply_media_safe_patch(hermes_dir: str | Path) -> MediaSafePatchResult:
 def patch_adapter_source(content: str) -> str:
     content = _apply_extract_patch(content)
     return _apply_delivery_patch(content)
+
+
+def _has_marker_patch(content: str) -> bool:
+    return MEDIA_SAFE_EXTRACT_BEGIN in content and MEDIA_SAFE_DELIVERY_BEGIN in content
+
+
+def _has_compatible_media_delivery(content: str) -> bool:
+    required = (
+        "self.extract_media",
+        "self.filter_media_delivery_paths",
+        "await self.send_image_file",
+        "await self.send_document",
+        "No deliverable text or media remained after processing MEDIA tags",
+    )
+    return all(item in content for item in required)
 
 
 def _find_feishu_adapter(hermes_dir: Path) -> Path | None:

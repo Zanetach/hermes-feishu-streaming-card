@@ -1,6 +1,7 @@
 from hermes_feishu_card.install.media_safe import (
     MEDIA_SAFE_DELIVERY_BEGIN,
     MEDIA_SAFE_EXTRACT_BEGIN,
+    _has_compatible_media_delivery,
     patch_adapter_source,
 )
 
@@ -56,3 +57,15 @@ def test_patch_adapter_source_is_idempotent():
     twice = patch_adapter_source(once)
 
     assert twice == once
+
+
+def test_existing_manual_media_delivery_logic_counts_as_compatible():
+    source = """
+media_files, content = self.extract_media(str(content or ""))
+media_files = self.filter_media_delivery_paths(media_files)
+media_result = await self.send_image_file(chat_id, media_path, metadata=metadata)
+media_result = await self.send_document(chat_id, media_path, metadata=metadata)
+return SendResult(success=False, error="No deliverable text or media remained after processing MEDIA tags")
+"""
+
+    assert _has_compatible_media_delivery(source)
