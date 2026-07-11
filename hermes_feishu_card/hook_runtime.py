@@ -2279,6 +2279,7 @@ def _hfc_action_metadata(data: Any) -> dict[str, Any] | None:
         return meta
     return None
 
+
 def _hfc_action_chat_id(data: Any) -> str:
     event = getattr(data, "event", None)
     context = getattr(event, "context", None)
@@ -2837,17 +2838,22 @@ def _hfc_switch_model_background_task(adapter: Any, data: Any, action_value: dic
     (provider slow / network jitter), so we resolve the click instantly with a
     "switching" card and perform the switch in the background.
 
-    After the switch finishes, we send a NEW interactive card message with the
-    result — we cannot *update* the original model_picker message because it was
-    not created with ``msg_type=interactive`` (Feishu returns code=230001
-    ``invalid msg_type`` when you try).
+    After the switch finishes, update the original card when Feishu permits it.
+    A single result card is sent only when the original message cannot be
+    updated.
     """
     async def _run() -> None:
         resolved = await _hfc_resolve_native_model_action_async(adapter, data, action_value)
         if resolved is None:
             _hfc_info("background model_picker ignored: unresolved")
             return
-        card, _ = resolved
+        card, resolved_message_id = resolved
+        target_message_id = resolved_message_id or message_id
+        if target_message_id and await _hfc_update_native_command_card(
+            adapter, target_message_id, card
+        ):
+            _hfc_info("background model switch: original card updated")
+            return
         chat_id = _hfc_action_chat_id(data)
         if not chat_id:
             _hfc_warn("background model switch: cannot determine chat_id for result card")
@@ -2885,13 +2891,18 @@ def _hfc_switch_model_background_task(adapter: Any, data: Any, action_value: dic
     loop = getattr(adapter, "_loop", None)
     submit = getattr(adapter, "_submit_on_loop", None)
     if loop is not None and callable(submit):
+        coroutine = _run()
+        submitted = False
         try:
-            submitted = submit(loop, _run())
+            submitted = bool(submit(loop, coroutine))
             if not submitted:
                 _hfc_warn("background model switch schedule failed")
             return
         except Exception as exc:
             _hfc_warn(f"background model switch schedule failed: {exc.__class__.__name__}: {exc}")
+        finally:
+            if not submitted:
+                coroutine.close()
 
 
 def _hfc_handle_native_model_action(
