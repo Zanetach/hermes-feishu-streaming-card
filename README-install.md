@@ -6,6 +6,12 @@ This package contains lightweight installers for `hermes-feishu-streaming-card`.
 They install the Python package, configure Feishu credentials, install the Hermes
 hook, start the sidecar, and print the health-check command.
 
+Cyclelink builds are based on upstream V3.10.0 and add production patches for
+Hermes Agent deployments: Feishu cards hide internal `MEDIA:` paths and debug
+mention counters, local preview URLs are rewritten to public artifact URLs, and
+setup/install also patches the Hermes Feishu adapter so generated images,
+documents, PDFs, and slide files are delivered as native Feishu attachments.
+
 From V3.6.2, setup also checks the Python interpreter used by Hermes Gateway
 itself. When `HERMES_DIR/venv/bin/python`, `HERMES_DIR/.venv/bin/python`, or the
 Windows equivalent exists, the same package release is installed into that

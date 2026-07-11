@@ -3,8 +3,11 @@ from __future__ import annotations
 import ast
 import html
 import json
+import os
 import re
+import shutil
 import time as _time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .session import CardSession
@@ -56,6 +59,144 @@ _TOOL_DETAIL_QUOTED_REDACTION_RE = re.compile(
     + r"[\"']?\s*[:=]\s*)([\"'])(.*?)(\2)"
 )
 _TOOL_DETAIL_REDACTED = "[REDACTED]"
+_LOCAL_PREVIEW_URL_RE = re.compile(r"https?://(?:127\.0\.0\.1|localhost):5300/?")
+_MEDIA_FILE_RE = re.compile(r"MEDIA:([^\s\]\)]+)")
+_MEDIA_LINE_RE = re.compile(r"(?im)^[^\n]*MEDIA:\s*[^\n]+(?:\n|$)")
+_MENTIONS_DEBUG_RE = re.compile(
+    r"\s*[（(]\s*mentions\s*[:：]\s*\d+\s*[)）]", re.IGNORECASE
+)
+_LATEST_PUBLIC_URL_FILE = Path("/tmp/hermes-latest-public-url")
+_PUBLIC_BASE_URL = "https://aibot.cyclelink.org"
+_PUBLIC_ROOT = Path("/srv/aibot")
+_PUBLIC_MEDIA_ROOT = _PUBLIC_ROOT / "artifacts" / "media"
+_PUBLISHABLE_MEDIA_ROOTS = (
+    Path("/root/output"),
+    Path("/tmp"),
+    _PUBLIC_ROOT / "artifacts",
+)
+
+
+def _latest_public_artifact_url() -> str:
+    configured = os.environ.get("HERMES_ARTIFACT_LATEST_PUBLIC_URL", "").strip()
+    if configured:
+        return configured.rstrip("/") + "/"
+    try:
+        if _LATEST_PUBLIC_URL_FILE.exists():
+            value = _LATEST_PUBLIC_URL_FILE.read_text(encoding="utf-8").strip()
+            if value.startswith(("http://", "https://")):
+                return value.rstrip("/") + "/"
+    except OSError:
+        pass
+
+    candidates: list[Path] = []
+    for root in (
+        Path("/root/output"),
+        Path(os.environ.get("HERMES_HOME", "")) / "output",
+    ):
+        if not root.exists():
+            continue
+        try:
+            candidates.extend(root.glob("*/ppt/.public-url"))
+        except OSError:
+            continue
+
+    newest: tuple[float, str] | None = None
+    for candidate in candidates:
+        try:
+            stat = candidate.stat()
+            value = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if value.startswith(("http://", "https://")) and (
+            newest is None or stat.st_mtime > newest[0]
+        ):
+            newest = (stat.st_mtime, value)
+    if newest is None:
+        return ""
+    return newest[1].rstrip("/") + "/"
+
+
+def _rewrite_public_artifact_urls(value: Any) -> Any:
+    if isinstance(value, str):
+        value = _sanitize_user_visible_text(value)
+        if not _LOCAL_PREVIEW_URL_RE.search(value):
+            return value
+        public_url = _latest_public_artifact_url()
+        if not public_url:
+            return value
+        return _LOCAL_PREVIEW_URL_RE.sub(public_url, value)
+    if isinstance(value, list):
+        return [_rewrite_public_artifact_urls(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_public_artifact_urls(item) for key, item in value.items()}
+    return value
+
+
+def _sanitize_user_visible_text(text: str) -> str:
+    text = _MEDIA_LINE_RE.sub("", text)
+    text = _MEDIA_FILE_RE.sub("", text)
+    text = _MENTIONS_DEBUG_RE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _rewrite_media_file_refs(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        path = match.group(1).rstrip(".,;，。")
+        public_url = _publish_media_file(path)
+        if not public_url:
+            return match.group(0)
+        return f"File: {public_url}"
+
+    return _MEDIA_FILE_RE.sub(replace, text)
+
+
+def _publish_media_file(path_value: str) -> str:
+    try:
+        source = Path(path_value).expanduser().resolve()
+    except OSError:
+        return ""
+    if not source.is_file():
+        return ""
+
+    try:
+        relative_public = source.relative_to(_PUBLIC_ROOT)
+    except ValueError:
+        relative_public = None
+    if relative_public is not None:
+        base_url = os.environ.get("HERMES_PUBLIC_BASE_URL", _PUBLIC_BASE_URL)
+        return f"{base_url.strip().rstrip('/')}/{relative_public.as_posix()}"
+
+    if not _is_publishable_media_path(source):
+        return ""
+
+    slug = _safe_media_slug(source.stem)
+    target_dir = _PUBLIC_MEDIA_ROOT / slug
+    target = target_dir / source.name
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        target_dir.chmod(0o755)
+        target.chmod(0o644)
+    except OSError:
+        return ""
+    base_url = os.environ.get("HERMES_PUBLIC_BASE_URL", _PUBLIC_BASE_URL)
+    return f"{base_url.strip().rstrip('/')}/artifacts/media/{slug}/{source.name}"
+
+
+def _is_publishable_media_path(source: Path) -> bool:
+    for root in _PUBLISHABLE_MEDIA_ROOTS:
+        try:
+            source.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _safe_media_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
+    return slug or "file"
 
 def _spinner_text(label: str = "生成中") -> str:
     return f"{_spinner_frame()} {label}"
@@ -127,7 +268,7 @@ def render_card(
     if status["subtitle"]:
         header["subtitle"] = {"tag": "plain_text", "content": status["subtitle"]}
 
-    return {
+    card = {
         "schema": "2.0",
         "config": {
             "update_multi": True,
@@ -138,6 +279,7 @@ def render_card(
             "elements": elements
         },
     }
+    return _rewrite_public_artifact_urls(card)
 
 
 def _render_status(

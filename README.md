@@ -1,4 +1,4 @@
-# Hermes 飞书流式卡片插件
+# Hermes 飞书流式卡片插件（Cyclelink 定制版）
 
 [中文](README.md) | [English](README.en.md)
 
@@ -15,6 +15,8 @@
 ![Hermes Feishu Streaming Card 封面](docs/assets/readme-cover.png)
 
 Hermes 飞书流式卡片插件把 Hermes Agent Gateway 的飞书/Lark 回复变成一张持续更新的交互式卡片。思考过程、工具调用、最终答案、授权确认、选项选择、系统提示和运行统计会收束在卡片内，而不是散落成多条灰色原生消息。
+
+本分支基于上游 `v3.10.0`，额外包含 Cyclelink 生产补丁：清理卡片中的 `MEDIA:` 内部路径和调试 mentions 信息，将本地预览地址改写为公网制品链接，并在安装时自动给 Hermes Feishu adapter 打补丁，让输出图片、PDF、Word、PPT 等文件作为飞书附件发送。
 
 它面向真实飞书使用场景：流式内容漏字/乱序、长表格和代码块变成 raw markdown、工具过程不可见、approval/clarify 需要手工回复、话题里卡片不更新、多 bot / 多 profile 难排查，以及 Hermes 升级后 hook 兼容不确定。
 
@@ -46,7 +48,7 @@ Hermes 飞书流式卡片插件把 Hermes Agent Gateway 的飞书/Lark 回复变
 macOS / Linux：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/baileyh8/hermes-feishu-streaming-card/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Zanetach/hermes-feishu-streaming-card/main/install.sh | bash
 ```
 
 Windows PowerShell：

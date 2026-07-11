@@ -50,6 +50,45 @@ def test_render_completed_card_replaces_thinking():
     assert "不会展示" not in content
 
 
+def test_render_completed_card_hides_media_directives_and_debug_mentions():
+    session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    session.status = "completed"
+    session.answer_text = (
+        "报告已生成 (mentions: 1)\n"
+        "MEDIA:/root/output/report/final.docx\n"
+        "请查看飞书附件。"
+    )
+
+    card = render_card(session)
+    content = str(card)
+
+    assert "请查看飞书附件" in content
+    assert "MEDIA:" not in content
+    assert "/root/output" not in content
+    assert "mentions:" not in content
+
+
+def test_render_rewrites_local_preview_url_to_latest_public_url(tmp_path, monkeypatch):
+    public_url_file = tmp_path / "latest-public-url"
+    public_url_file.write_text(
+        "https://aibot.cyclelink.org/artifacts/demo/\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "hermes_feishu_card.render._LATEST_PUBLIC_URL_FILE",
+        public_url_file,
+    )
+    session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
+    session.status = "completed"
+    session.answer_text = "预览地址：http://127.0.0.1:5300/"
+
+    card = render_card(session)
+    content = str(card)
+
+    assert "https://aibot.cyclelink.org/artifacts/demo/" in content
+    assert "127.0.0.1:5300" not in content
+
+
 def test_v3818_normal_completed_card_keeps_element_order_and_configured_footer():
     session = CardSession(conversation_id="chat-1", message_id="msg-1", chat_id="oc_abc")
     session.status = "completed"

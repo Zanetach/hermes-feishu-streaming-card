@@ -31,6 +31,7 @@ from hermes_feishu_card.feishu_client import FeishuAPIError, FeishuClient, Feish
 from hermes_feishu_card.install.detect import HermesDetection, detect_hermes
 from hermes_feishu_card.install.envfile import read_hfc_env, update_hfc_env
 from hermes_feishu_card.install.manifest import file_sha256
+from hermes_feishu_card.install.media_safe import apply_media_safe_patch
 from hermes_feishu_card.install.recovery import (
     RecoveryRefused,
     _first_refusal,
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_bots(args)
     if args.command == "install":
         return _run_install(args)
+    if args.command == "patch-media-safe":
+        return _run_patch_media_safe(args)
     if args.command == "repair":
         return _run_repair(args)
     if args.command == "restore":
@@ -179,6 +182,12 @@ def _build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument("--yes", action="store_true", required=True)
         if command == "install":
             command_parser.add_argument("--no-repair", action="store_true")
+    media_safe = subparsers.add_parser(
+        "patch-media-safe",
+        help="patch Hermes Feishu adapter so MEDIA files are sent as attachments",
+    )
+    media_safe.add_argument("--hermes-dir", required=True)
+    media_safe.add_argument("--yes", action="store_true", required=True)
     return parser
 
 
@@ -1939,8 +1948,16 @@ def _run_install(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    media_safe_result = apply_media_safe_patch(detection.root)
+    print(media_safe_result.message)
     print("install ok")
     return 0
+
+
+def _run_patch_media_safe(args: argparse.Namespace) -> int:
+    result = apply_media_safe_patch(args.hermes_dir)
+    print(result.message)
+    return 0 if result.applied or result.changed else 1
 
 
 def _run_repair(args: argparse.Namespace) -> int:
